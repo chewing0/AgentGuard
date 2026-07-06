@@ -1,0 +1,167 @@
+{
+  "tools": [
+    {
+      "name": "file.read",
+      "description": "Read a text file from approved public or shared project directories.",
+      "operation": "read",
+      "risk_level": "medium",
+      "required_scopes": ["file:read"],
+      "allowed_roles": ["analyst", "researcher", "operator", "admin"],
+      "requires_confirmation": false,
+      "parameters": {
+        "path": {
+          "kind": "path",
+          "required": true,
+          "allowed_roots": ["data/demo_workspace/public", "data/demo_workspace/shared"],
+          "deny_patterns": ["secrets?\\.env", "\\.env", "private", "\\.ssh", "\\.aws"]
+        }
+      },
+      "redact_output": true
+    },
+    {
+      "name": "file.write",
+      "description": "Write generated artifacts into the demo scratch directory.",
+      "operation": "write",
+      "risk_level": "medium",
+      "required_scopes": ["file:write"],
+      "allowed_roles": ["analyst", "researcher", "operator", "admin"],
+      "requires_confirmation": false,
+      "parameters": {
+        "path": {
+          "kind": "path",
+          "required": true,
+          "allowed_roots": ["data/demo_workspace/scratch"],
+          "deny_patterns": ["secrets?\\.env", "\\.env", "private"]
+        },
+        "content": {
+          "kind": "string",
+          "required": true,
+          "max_length": 4000,
+          "deny_patterns": ["-----BEGIN .*PRIVATE KEY-----"]
+        }
+      },
+      "redact_output": true
+    },
+    {
+      "name": "file.delete",
+      "description": "Delete a file in the scratch directory after explicit human confirmation.",
+      "operation": "delete",
+      "risk_level": "critical",
+      "required_scopes": ["file:delete"],
+      "allowed_roles": ["admin"],
+      "requires_confirmation": true,
+      "parameters": {
+        "path": {
+          "kind": "path",
+          "required": true,
+          "allowed_roots": ["data/demo_workspace/scratch"],
+          "deny_patterns": ["secrets?\\.env", "\\.env", "private", "public"]
+        },
+        "execute": {
+          "kind": "string",
+          "required": false,
+          "allowed_values": [true, false]
+        }
+      },
+      "redact_output": true
+    },
+    {
+      "name": "db.query",
+      "description": "Run read-only SQL over the demo ticket database.",
+      "operation": "database",
+      "risk_level": "medium",
+      "required_scopes": ["db:read"],
+      "allowed_roles": ["analyst", "researcher", "admin"],
+      "requires_confirmation": false,
+      "parameters": {
+        "query": {
+          "kind": "sql",
+          "required": true,
+          "readonly": true,
+          "max_length": 1000,
+          "deny_patterns": ["\\bsalary\\b", "\\bemployees\\b", "\\bemail\\b"]
+        }
+      },
+      "redact_output": true
+    },
+    {
+      "name": "code.python",
+      "description": "Evaluate a constrained Python expression.",
+      "operation": "execute",
+      "risk_level": "high",
+      "required_scopes": ["code:execute"],
+      "allowed_roles": ["researcher", "admin"],
+      "requires_confirmation": true,
+      "parameters": {
+        "code": {
+          "kind": "code",
+          "required": true,
+          "max_length": 1000,
+          "deny_patterns": ["socket", "subprocess", "__import__", "open\\(", "eval\\(", "exec\\("]
+        }
+      },
+      "redact_output": true
+    },
+    {
+      "name": "api.get",
+      "description": "Call allowlisted external demo APIs.",
+      "operation": "network",
+      "risk_level": "medium",
+      "required_scopes": ["network:api"],
+      "allowed_roles": ["analyst", "researcher", "operator", "admin"],
+      "requires_confirmation": false,
+      "parameters": {
+        "url": {
+          "kind": "url",
+          "required": true,
+          "allowed_domains": ["api.weather.example", "api.news.example"],
+          "allow_private_networks": false,
+          "max_length": 500,
+          "deny_patterns": ["metadata", "169\\.254\\.169\\.254"]
+        }
+      },
+      "redact_output": true
+    },
+    {
+      "name": "web.search",
+      "description": "Search a mock web index for public information.",
+      "operation": "search",
+      "risk_level": "low",
+      "required_scopes": ["search:read"],
+      "allowed_roles": ["analyst", "researcher", "operator", "admin", "guest"],
+      "requires_confirmation": false,
+      "parameters": {
+        "query": {
+          "kind": "string",
+          "required": true,
+          "max_length": 500,
+          "deny_patterns": ["sk-[A-Za-z0-9_-]{20,}", "password\\s*[:=]"]
+        }
+      },
+      "redact_output": true
+    },
+    {
+      "name": "kb.search",
+      "description": "Search the local demo knowledge base for project guidance.",
+      "operation": "search",
+      "risk_level": "low",
+      "required_scopes": ["kb:read"],
+      "allowed_roles": ["analyst", "researcher", "operator", "admin"],
+      "requires_confirmation": false,
+      "parameters": {
+        "query": {
+          "kind": "string",
+          "required": true,
+          "max_length": 500,
+          "deny_patterns": ["sk-[A-Za-z0-9_-]{20,}", "password\\s*[:=]", "secrets?\\.env", "\\.env"]
+        },
+        "top_k": {
+          "kind": "string",
+          "required": false,
+          "allowed_values": [1, 2, 3, 4, 5]
+        }
+      },
+      "redact_output": true
+    }
+  ]
+}

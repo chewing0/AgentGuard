@@ -1,0 +1,3 @@
+AgentGuard is a research prototype for evaluating and mediating LLM agent tool calls.
+The public project brief says the system should log every tool decision, classify risk, and preserve normal task utility.
+

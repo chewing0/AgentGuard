@@ -1,0 +1,6 @@
+Q: Which tools are safe for regular analysts?
+A: Public file reads, mock web search, allowlisted API calls, and read-only ticket queries.
+
+Q: What should happen before destructive actions?
+A: The security gateway should require explicit human confirmation and write an audit event.
+

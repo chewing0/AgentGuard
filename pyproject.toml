@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agentguard"
+version = "0.1.0"
+description = "Tool-call security evaluation and runtime protection platform for LLM agents."
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [
+  { name = "AgentGuard Contributors" }
+]
+license = { text = "MIT" }
+keywords = ["llm-agent", "security", "tool-use", "prompt-injection", "benchmark"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Topic :: Security",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence"
+]
+
+[project.scripts]
+agentguard = "agentguard.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["agentguard*"]
+
