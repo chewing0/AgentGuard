@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from .agents import DemoAgent
+from .agents import DemoAgent, SecurityOperationsAgent
 from .audit import AuditLogger, read_audit, summarize_events
 from .attacks import builtin_attack_scenarios
 from .benchmarks import load_tasks
@@ -62,6 +62,14 @@ def main(argv: list[str] | None = None) -> int:
     agent.add_argument("--untrusted", action="store_true", help="Treat retrieved task context as untrusted.")
     agent.add_argument("--simulate-attack", action="store_true", help="Simulate following a poisoned KB instruction.")
 
+    soc_agent = sub.add_parser("security-agent", help="Run the SOC security-operations agent on an alert triage task.")
+    soc_agent.add_argument("task", nargs="?", default="Triage alert SOC-104 and produce a containment recommendation.")
+    soc_agent.add_argument("--tools", default=str(DEFAULT_TOOLS))
+    soc_agent.add_argument("--audit", default=str(DEFAULT_RUNS / "security_agent_audit.jsonl"))
+    soc_agent.add_argument("--report-path")
+    soc_agent.add_argument("--untrusted", action="store_true", help="Treat retrieved task context as untrusted.")
+    soc_agent.add_argument("--simulate-attack", action="store_true", help="Simulate a vulnerable follow-up from poisoned KB content.")
+
     attacks = sub.add_parser("list-attacks", help="List built-in attack scenarios.")
     attacks.add_argument("--json", action="store_true", help="Print machine-readable scenario JSON.")
 
@@ -91,6 +99,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_validate(args)
     if args.command == "agent":
         return _cmd_agent(args)
+    if args.command == "security-agent":
+        return _cmd_security_agent(args)
     if args.command == "list-attacks":
         return _cmd_list_attacks(args)
     if args.command == "confirm-demo":
@@ -192,6 +202,25 @@ def _cmd_agent(args: argparse.Namespace) -> int:
         args.task,
         context=context,
         simulate_attack_followup=args.simulate_attack,
+    )
+    print(run.markdown())
+    print(f"Audit written to {args.audit}")
+    return 0
+
+
+def _cmd_security_agent(args: argparse.Namespace) -> int:
+    registry = attach_builtin_handlers(ToolRegistry.from_json(args.tools), PROJECT_ROOT)
+    gateway = SecurityGateway(registry, PROJECT_ROOT, AuditLogger(args.audit))
+    context = SecurityContext(
+        user_id="soc-analyst",
+        role="analyst",
+        scopes={"file:read", "file:write", "db:read", "kb:read", "threat:intel"},
+        trusted_input=not (args.untrusted or args.simulate_attack),
+    )
+    run = SecurityOperationsAgent(gateway, report_path=args.report_path).run(
+        args.task,
+        context=context,
+        simulate_vulnerable_followup=args.simulate_attack,
     )
     print(run.markdown())
     print(f"Audit written to {args.audit}")

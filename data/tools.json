@@ -2,7 +2,7 @@
   "tools": [
     {
       "name": "file.read",
-      "description": "Read a text file from approved public or shared project directories.",
+      "description": "Read a text file from approved public, shared, or security-operations directories.",
       "operation": "read",
       "risk_level": "medium",
       "required_scopes": ["file:read"],
@@ -12,15 +12,20 @@
         "path": {
           "kind": "path",
           "required": true,
-          "allowed_roots": ["data/demo_workspace/public", "data/demo_workspace/shared"],
-          "deny_patterns": ["secrets?\\.env", "\\.env", "private", "\\.ssh", "\\.aws"]
+          "allowed_roots": [
+            "data/demo_workspace/public",
+            "data/demo_workspace/shared",
+            "data/security_ops_workspace/public",
+            "data/security_ops_workspace/intake"
+          ],
+          "deny_patterns": ["secrets?\\.env", "cloud_tokens\\.env", "\\.env", "private", "\\.ssh", "\\.aws"]
         }
       },
       "redact_output": true
     },
     {
       "name": "file.write",
-      "description": "Write generated artifacts into the demo scratch directory.",
+      "description": "Write generated artifacts into approved scratch or security-operations report directories.",
       "operation": "write",
       "risk_level": "medium",
       "required_scopes": ["file:write"],
@@ -30,8 +35,8 @@
         "path": {
           "kind": "path",
           "required": true,
-          "allowed_roots": ["data/demo_workspace/scratch"],
-          "deny_patterns": ["secrets?\\.env", "\\.env", "private"]
+          "allowed_roots": ["data/demo_workspace/scratch", "data/security_ops_workspace/reports"],
+          "deny_patterns": ["secrets?\\.env", "cloud_tokens\\.env", "\\.env", "private"]
         },
         "content": {
           "kind": "string",
@@ -67,7 +72,7 @@
     },
     {
       "name": "db.query",
-      "description": "Run read-only SQL over the demo ticket database.",
+      "description": "Run read-only SQL over the local ticket, alert, and asset database.",
       "operation": "database",
       "risk_level": "medium",
       "required_scopes": ["db:read"],
@@ -142,7 +147,7 @@
     },
     {
       "name": "kb.search",
-      "description": "Search the local demo knowledge base for project guidance.",
+      "description": "Search local project and SOC knowledge bases for guidance.",
       "operation": "search",
       "risk_level": "low",
       "required_scopes": ["kb:read"],
@@ -159,6 +164,29 @@
           "kind": "string",
           "required": false,
           "allowed_values": [1, 2, 3, 4, 5]
+        }
+      },
+      "redact_output": true
+    },
+    {
+      "name": "threat.lookup",
+      "description": "Lookup a domain, IP, URL, or hash in the local approved threat-intelligence feed.",
+      "operation": "network",
+      "risk_level": "medium",
+      "required_scopes": ["threat:intel"],
+      "allowed_roles": ["analyst", "researcher", "operator", "admin"],
+      "requires_confirmation": false,
+      "parameters": {
+        "indicator": {
+          "kind": "string",
+          "required": true,
+          "max_length": 300,
+          "deny_patterns": ["sk-[A-Za-z0-9_-]{20,}", "password\\s*[:=]", "cloud_tokens\\.env", "secrets?\\.env", "\\.env"]
+        },
+        "indicator_type": {
+          "kind": "string",
+          "required": true,
+          "allowed_values": ["domain", "ip", "url", "hash"]
         }
       },
       "redact_output": true

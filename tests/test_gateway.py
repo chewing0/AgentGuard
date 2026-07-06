@@ -63,6 +63,20 @@ class GatewayTests(unittest.TestCase):
         self.assertTrue(result.ok)
         self.assertGreaterEqual(len(result.output), 1)
 
+    def test_allows_threat_intel_lookup(self) -> None:
+        context = SecurityContext(user_id="soc", role="analyst", scopes={"threat:intel"})
+        call = ToolCall("threat.lookup", {"indicator": "invoice-update.example", "indicator_type": "domain"})
+        decision, result = self.gateway.execute(call, context)
+        self.assertEqual(decision.decision, Decision.ALLOW)
+        self.assertIsNotNone(result)
+        self.assertEqual(result.output["reputation"], "suspicious")
+
+    def test_blocks_secret_in_threat_intel_lookup(self) -> None:
+        context = SecurityContext(user_id="soc", role="analyst", scopes={"threat:intel"})
+        call = ToolCall("threat.lookup", {"indicator": "sk-agentguard-demo-1234567890abcdef", "indicator_type": "domain"})
+        decision = self.gateway.inspect(call, context)
+        self.assertEqual(decision.decision, Decision.BLOCK)
+
     def test_sensitive_detector_redacts_nested_values(self) -> None:
         redacted, counts = SensitiveDataDetector().redact({"token": "sk-agentguard-demo-1234567890abcdef"})
         self.assertIn("openai_api_key", counts)

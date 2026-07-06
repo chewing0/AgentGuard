@@ -17,7 +17,9 @@ class DemoToolEnvironment:
     def __init__(self, workspace_root: str | Path) -> None:
         self.workspace_root = Path(workspace_root).resolve()
         self.demo_root = self.workspace_root / "data" / "demo_workspace"
+        self.security_ops_root = self.workspace_root / "data" / "security_ops_workspace"
         self.demo_root.mkdir(parents=True, exist_ok=True)
+        self.security_ops_root.mkdir(parents=True, exist_ok=True)
 
     def attach(self, registry: ToolRegistry) -> ToolRegistry:
         handlers = {
@@ -29,6 +31,7 @@ class DemoToolEnvironment:
             "api.get": self.api_get,
             "web.search": self.web_search,
             "kb.search": self.kb_search,
+            "threat.lookup": self.threat_lookup,
         }
         for name, handler in handlers.items():
             if registry.get(name):
@@ -101,6 +104,44 @@ class DemoToolEnvironment:
         }.get(parsed.hostname, {"status": "mock", "host": parsed.hostname})
         return ToolResult(ok=True, output=payload, metadata={"url": url})
 
+    def threat_lookup(self, params: dict[str, Any]) -> ToolResult:
+        indicator = str(params.get("indicator", "")).strip().lower()
+        indicator_type = str(params.get("indicator_type", "domain")).strip().lower()
+        feed = {
+            "invoice-update.example": {
+                "reputation": "suspicious",
+                "confidence": 72,
+                "first_seen": "2026-06-20",
+                "labels": ["credential-phishing", "lookalike-domain"],
+            },
+            "bad-login.example": {
+                "reputation": "malicious",
+                "confidence": 94,
+                "first_seen": "2026-06-15",
+                "labels": ["credential-theft", "active-campaign"],
+            },
+            "updates.example": {
+                "reputation": "benign",
+                "confidence": 81,
+                "first_seen": "2026-01-12",
+                "labels": ["known-vendor"],
+            },
+        }
+        payload = feed.get(
+            indicator,
+            {
+                "reputation": "unknown",
+                "confidence": 35,
+                "first_seen": None,
+                "labels": [],
+            },
+        )
+        return ToolResult(
+            ok=True,
+            output={"indicator": indicator, "indicator_type": indicator_type, **payload},
+            metadata={"source": "local-threat-intel"},
+        )
+
     def web_search(self, params: dict[str, Any]) -> ToolResult:
         query = str(params.get("query", ""))
         results = [
@@ -131,25 +172,27 @@ class DemoToolEnvironment:
             top_k = int(params.get("top_k", 3))
         except (TypeError, ValueError):
             top_k = 3
-        kb_root = self.demo_root / "kb"
-        if not kb_root.exists():
+        kb_roots = [self.demo_root / "kb", self.security_ops_root / "kb"]
+        existing_roots = [root for root in kb_roots if root.exists()]
+        if not existing_roots:
             return ToolResult(ok=True, output=[], metadata={"query": query, "count": 0})
 
         matches: list[dict[str, Any]] = []
-        for path in sorted(kb_root.glob("*.md")):
-            text = path.read_text(encoding="utf-8")
-            title = _first_heading(text) or path.stem.replace("_", " ").title()
-            score = _score_text(query, f"{title}\n{text}")
-            if query and score <= 0:
-                continue
-            matches.append(
-                {
-                    "title": title,
-                    "path": str(path.relative_to(self.workspace_root)),
-                    "snippet": _snippet(text, query),
-                    "score": score,
-                }
-            )
+        for kb_root in existing_roots:
+            for path in sorted(kb_root.glob("*.md")):
+                text = path.read_text(encoding="utf-8")
+                title = _first_heading(text) or path.stem.replace("_", " ").title()
+                score = _score_text(query, f"{title}\n{text}")
+                if query and score <= 0:
+                    continue
+                matches.append(
+                    {
+                        "title": title,
+                        "path": str(path.relative_to(self.workspace_root)),
+                        "snippet": _snippet(text, query),
+                        "score": score,
+                    }
+                )
         matches.sort(key=lambda item: (-int(item["score"]), item["title"]))
         return ToolResult(
             ok=True,
@@ -180,6 +223,23 @@ class DemoToolEnvironment:
                 severity TEXT,
                 status TEXT
             );
+            CREATE TABLE alerts (
+                id TEXT PRIMARY KEY,
+                title TEXT,
+                severity TEXT,
+                asset_id TEXT,
+                status TEXT,
+                source TEXT,
+                indicator TEXT
+            );
+            CREATE TABLE assets (
+                asset_id TEXT PRIMARY KEY,
+                hostname TEXT,
+                owner TEXT,
+                business_unit TEXT,
+                criticality TEXT,
+                data_classification TEXT
+            );
             INSERT INTO employees (name, team, salary, email) VALUES
                 ('Ada Chen', 'security', 180000, 'ada.chen@example.com'),
                 ('Lin Wang', 'platform', 165000, 'lin.wang@example.com'),
@@ -188,6 +248,14 @@ class DemoToolEnvironment:
                 ('Review tool permissions', 'high', 'open'),
                 ('Rotate demo API key', 'medium', 'open'),
                 ('Document gateway metrics', 'low', 'closed');
+            INSERT INTO alerts (id, title, severity, asset_id, status, source, indicator) VALUES
+                ('SOC-104', 'Credential phishing link clicked', 'high', 'ASSET-022', 'open', 'email-security', 'invoice-update.example'),
+                ('SOC-207', 'Suspicious authentication portal', 'critical', 'ASSET-031', 'open', 'identity', 'bad-login.example'),
+                ('SOC-309', 'Known vendor updater check', 'low', 'ASSET-014', 'closed', 'endpoint', 'updates.example');
+            INSERT INTO assets (asset_id, hostname, owner, business_unit, criticality, data_classification) VALUES
+                ('ASSET-022', 'fin-laptop-022', 'finance-ops', 'Finance', 'high', 'confidential'),
+                ('ASSET-031', 'idp-admin-031', 'identity-platform', 'Platform', 'high', 'restricted'),
+                ('ASSET-014', 'design-mac-014', 'brand-design', 'Marketing', 'medium', 'internal');
             """
         )
 

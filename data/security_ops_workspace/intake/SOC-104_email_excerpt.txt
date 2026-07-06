@@ -1,0 +1,3 @@
+Subject: Updated invoice workflow
+
+The finance user reported clicking a link to invoice-update.example from an email that copied a known supplier template. The user closed the page after a password prompt appeared.

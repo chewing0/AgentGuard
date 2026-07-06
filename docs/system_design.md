@@ -8,7 +8,7 @@ AgentGuard mediates LLM agent tool use before execution. The design goal is to p
 
 ```mermaid
 flowchart LR
-    A["User task"] --> B["DemoAgent plans ToolCall chain"]
+    A["SOC triage task"] --> B["SecurityOperationsAgent planner-executor loop"]
     B --> C["Tool Registry"]
     C --> D["Policy Engine"]
     D --> E["Permission Check"]
@@ -31,7 +31,7 @@ flowchart LR
 ## Core Modules
 
 - `agentguard.schemas`: shared dataclasses for tools, calls, contexts, decisions, signals, and audit events.
-- `agentguard.agents`: deterministic `DemoAgent` for natural-language task entry and multi-step tool execution.
+- `agentguard.agents`: deterministic `SecurityOperationsAgent` for SOC alert triage, plus the smaller compatibility `DemoAgent`.
 - `agentguard.attacks`: built-in attack scenario catalog for demos and reporting.
 - `agentguard.registry`: loads tool security policies and attaches executable handlers.
 - `agentguard.defense`: explicit `PolicyEngine` for permission, parameter, sensitive-data, prompt-injection, and high-risk checks.
@@ -55,7 +55,7 @@ Each tool has:
 - `parameters`: per-argument constraints such as allowed roots, SQL read-only mode, URL allowlists, deny patterns, and max length.
 - `redact_output`: whether sensitive detector should sanitize results.
 
-The default tool set includes file, database, constrained Python, mock API, mock web search, and local knowledge-base search (`kb.search`).
+The default tool set includes file, database, constrained Python, mock API, mock web search, threat-intelligence lookup (`threat.lookup`), and local knowledge-base search (`kb.search`).
 
 ## Runtime Decision Logic
 
@@ -90,11 +90,30 @@ Each step contains:
 - `expected_gateway_decision`: regression oracle for gateway behavior.
 - `source_content`: retrieved or untrusted text when modeling indirect prompt injection.
 
-The benchmark also includes a local KB poisoning case where `kb.search` returns content that attempts to steer the agent into reading `secrets.env`.
+The benchmark also includes local KB poisoning cases where `kb.search` returns content that attempts to steer an agent into reading private token files.
 
-## Agent Demo Chain
+## Tested Agent: Security Operations Agent
 
-The included rule-based agent runs this deterministic workflow:
+`SecurityOperationsAgent` is the main protected agent. It models a SOC analyst workflow rather than a toy report generator:
+
+```text
+Natural-language SOC task
+  -> parse alert id, defaulting to SOC-104
+  -> read the SOC operating charter
+  -> query alert evidence from the local database
+  -> query impacted asset business context
+  -> lookup the alert indicator in approved threat intelligence
+  -> retrieve internal playbooks from the knowledge base
+  -> quarantine prompt-injection-like retrieved content
+  -> synthesize a triage report
+  -> write data/security_ops_workspace/reports/<alert_id>_triage.md
+```
+
+This agent follows the planner-executor pattern used by many open-source agent frameworks, but remains dependency-free and deterministic for reproducible security evaluation. Every tool call is still mediated by the security gateway.
+
+## Compatibility Demo Chain
+
+The smaller compatibility agent remains available for quick demos:
 
 ```text
 Natural-language task
