@@ -6,7 +6,13 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from .agents import DemoAgent, SecurityOperationsAgent
+from .agents import (
+    DemoAgent,
+    LangGraphAutonomousAgent,
+    SecurityOperationsAgent,
+    build_scripted_security_ops_model,
+    load_chat_model,
+)
 from .audit import AuditLogger, read_audit, summarize_events
 from .attacks import builtin_attack_scenarios
 from .benchmarks import load_tasks
@@ -70,6 +76,27 @@ def main(argv: list[str] | None = None) -> int:
     soc_agent.add_argument("--untrusted", action="store_true", help="Treat retrieved task context as untrusted.")
     soc_agent.add_argument("--simulate-attack", action="store_true", help="Simulate a vulnerable follow-up from poisoned KB content.")
 
+    langgraph_demo = sub.add_parser("langgraph-demo", help="Run a LangGraph tool-node adapter demo through the gateway.")
+    langgraph_demo.add_argument("--tool", default="kb.search", help="Registered AgentGuard tool to call.")
+    langgraph_demo.add_argument(
+        "--params-json",
+        default='{"query":"gateway report recommendations","top_k":2}',
+        help="JSON object passed as the LangGraph tool-call arguments.",
+    )
+    langgraph_demo.add_argument("--tools", default=str(DEFAULT_TOOLS))
+    langgraph_demo.add_argument("--audit", default=str(DEFAULT_RUNS / "langgraph_audit.jsonl"))
+    langgraph_demo.add_argument("--untrusted", action="store_true", help="Treat tool-call source content as untrusted.")
+
+    autonomous = sub.add_parser("autonomous-agent", help="Run a full LangGraph autonomous LLM agent behind AgentGuard.")
+    autonomous.add_argument("task", nargs="?", default="Triage SOC-104 using vendor advisory guidance and write a report.")
+    autonomous.add_argument("--tools", default=str(DEFAULT_TOOLS))
+    autonomous.add_argument("--audit", default=str(DEFAULT_RUNS / "autonomous_agent_audit.jsonl"))
+    autonomous.add_argument("--report-path", default="data/security_ops_workspace/reports/langgraph_SOC-104_triage.md")
+    autonomous.add_argument("--model", help="Real LangChain chat model name, for example openai:gpt-4.1-mini.")
+    autonomous.add_argument("--simulate-attack", action="store_true", help="Script the LLM to follow poisoned retrieved content.")
+    autonomous.add_argument("--untrusted", action="store_true", help="Treat task and retrieved context as untrusted.")
+    autonomous.add_argument("--recursion-limit", type=int, default=20)
+
     attacks = sub.add_parser("list-attacks", help="List built-in attack scenarios.")
     attacks.add_argument("--json", action="store_true", help="Print machine-readable scenario JSON.")
 
@@ -101,6 +128,10 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_agent(args)
     if args.command == "security-agent":
         return _cmd_security_agent(args)
+    if args.command == "langgraph-demo":
+        return _cmd_langgraph_demo(args)
+    if args.command == "autonomous-agent":
+        return _cmd_autonomous_agent(args)
     if args.command == "list-attacks":
         return _cmd_list_attacks(args)
     if args.command == "confirm-demo":
@@ -223,6 +254,110 @@ def _cmd_security_agent(args: argparse.Namespace) -> int:
         simulate_vulnerable_followup=args.simulate_attack,
     )
     print(run.markdown())
+    print(f"Audit written to {args.audit}")
+    return 0
+
+
+def _cmd_langgraph_demo(args: argparse.Namespace) -> int:
+    try:
+        from langchain_core.messages import AIMessage
+        from langgraph.graph import END, START, MessagesState, StateGraph
+    except ImportError as exc:
+        print(
+            "LangGraph demo dependencies are not installed. "
+            "Install with: python -m pip install -e .[langgraph]",
+            file=sys.stderr,
+        )
+        print(f"Missing dependency detail: {exc}", file=sys.stderr)
+        return 1
+
+    from .adapters import LangGraphGatewayAdapter
+
+    try:
+        params = json.loads(args.params_json)
+    except json.JSONDecodeError as exc:
+        print(f"--params-json is not valid JSON: {exc}", file=sys.stderr)
+        return 2
+    if not isinstance(params, dict):
+        print("--params-json must be a JSON object", file=sys.stderr)
+        return 2
+
+    registry = attach_builtin_handlers(ToolRegistry.from_json(args.tools), PROJECT_ROOT)
+    if not registry.get(args.tool):
+        print(f"Tool not found: {args.tool}", file=sys.stderr)
+        return 2
+    gateway = SecurityGateway(registry, PROJECT_ROOT, AuditLogger(args.audit))
+    context = SecurityContext(
+        user_id="langgraph-demo",
+        role="analyst",
+        scopes={"file:read", "file:write", "db:read", "kb:read", "search:read", "network:api", "threat:intel"},
+        trusted_input=not args.untrusted,
+    )
+    adapter = LangGraphGatewayAdapter(gateway, context, task_id="langgraph-demo")
+    framework_tool = adapter.to_framework_tool_name(args.tool)
+
+    builder = StateGraph(MessagesState)
+    builder.add_node("tools", adapter.tool_node)
+    builder.add_edge(START, "tools")
+    builder.add_edge("tools", END)
+    graph = builder.compile()
+    result = graph.invoke(
+        {
+            "messages": [
+                AIMessage(
+                    content="",
+                    tool_calls=[{"name": framework_tool, "args": params, "id": "call-agentguard-demo"}],
+                )
+            ]
+        }
+    )
+    final_message = result["messages"][-1]
+    print(f"LangGraph adapter executed {args.tool} as {framework_tool}")
+    print(final_message.content)
+    print(f"Audit written to {args.audit}")
+    return 0
+
+
+def _cmd_autonomous_agent(args: argparse.Namespace) -> int:
+    registry = attach_builtin_handlers(ToolRegistry.from_json(args.tools), PROJECT_ROOT)
+    gateway = SecurityGateway(registry, PROJECT_ROOT, AuditLogger(args.audit))
+    context = SecurityContext(
+        user_id="langgraph-autonomous-agent",
+        role="analyst",
+        scopes={"file:read", "file:write", "db:read", "kb:read", "search:read", "network:api", "threat:intel"},
+        trusted_input=not (args.untrusted or args.simulate_attack),
+    )
+    try:
+        model = (
+            load_chat_model(args.model)
+            if args.model
+            else build_scripted_security_ops_model(
+                report_path=args.report_path,
+                simulate_attack=args.simulate_attack,
+            )
+        )
+        agent = LangGraphAutonomousAgent(
+            gateway,
+            model,
+            task_id="langgraph-autonomous-agent",
+            recursion_limit=args.recursion_limit,
+        )
+        run = agent.run(
+            args.task,
+            context=context,
+            source_content=args.task if args.untrusted else "",
+            declared_purpose="Autonomously complete the SOC triage task with available tools.",
+            report_path=args.report_path,
+        )
+    except Exception as exc:
+        print(f"Autonomous agent failed: {type(exc).__name__}: {exc}", file=sys.stderr)
+        return 1
+
+    print(run.markdown())
+    if run.metadata.get("final_message"):
+        print()
+        print("Final message:")
+        print(run.metadata["final_message"])
     print(f"Audit written to {args.audit}")
     return 0
 

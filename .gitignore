@@ -10,6 +10,9 @@ htmlcov/
 venv/
 env/
 
+.codex/
+.codex-*/
+
 build/
 dist/
 *.egg-info/

@@ -9,7 +9,11 @@ AgentGuard mediates LLM agent tool use before execution. The design goal is to p
 ```mermaid
 flowchart LR
     A["SOC triage task"] --> B["SecurityOperationsAgent planner-executor loop"]
+    A2["SOC triage task"] --> B3["LangGraphAutonomousAgent LLM loop"]
+    B3 --> B2["LangGraphGatewayAdapter tool node"]
+    A3["Single framework tool-call demo"] --> B2
     B --> C["Tool Registry"]
+    B2 --> C
     C --> D["Policy Engine"]
     D --> E["Permission Check"]
     D --> F["Parameter Check"]
@@ -32,6 +36,8 @@ flowchart LR
 
 - `agentguard.schemas`: shared dataclasses for tools, calls, contexts, decisions, signals, and audit events.
 - `agentguard.agents`: deterministic `SecurityOperationsAgent` for SOC alert triage, plus the smaller compatibility `DemoAgent`.
+- `agentguard.agents.LangGraphAutonomousAgent`: full LangGraph ReAct-style LLM loop used when the attacked system must be an autonomous agent.
+- `agentguard.adapters`: external framework adapters. The LangGraph adapter maps LangGraph/LangChain tool calls into AgentGuard `ToolCall` objects before execution.
 - `agentguard.attacks`: built-in attack scenario catalog for demos and reporting.
 - `agentguard.registry`: loads tool security policies and attaches executable handlers.
 - `agentguard.defense`: explicit `PolicyEngine` for permission, parameter, sensitive-data, prompt-injection, and high-risk checks.
@@ -110,6 +116,27 @@ Natural-language SOC task
 ```
 
 This agent follows the planner-executor pattern used by many open-source agent frameworks, but remains dependency-free and deterministic for reproducible security evaluation. Every tool call is still mediated by the security gateway.
+
+## LangGraph Adapter
+
+`LangGraphAutonomousAgent` is the complete attacked-agent path. It builds a LangGraph state graph with an LLM node and a guarded tool node:
+
+```text
+Human task
+  -> LLM emits tool calls
+  -> LangGraphGatewayAdapter executes each call through SecurityGateway
+  -> tool observations return to the LLM
+  -> loop continues until the LLM emits a final answer
+```
+
+The local demo uses a scripted tool-calling ChatModel for reproducibility, while the same class can accept a real LangChain ChatModel loaded from a provider package.
+
+`LangGraphGatewayAdapter` is the framework boundary used by the autonomous agent. It supports two entry points:
+
+- `as_tools()`: exports registered AgentGuard tools as LangChain `StructuredTool` objects with provider-safe names such as `agentguard__file__read`.
+- `tool_node(state)`: acts as a LangGraph `StateGraph` node that reads tool calls from the latest message, executes each call through `SecurityGateway`, and returns `ToolMessage` observations.
+
+The adapter maps framework-safe names back to the original registry names, preserves normal audit logging, and stores executed framework calls as `AgentStep` records so LangGraph runs can still be rendered as an AgentGuard run trace.
 
 ## Compatibility Demo Chain
 

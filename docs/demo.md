@@ -42,7 +42,27 @@ python -m agentguard agent "Generate a security assessment report for AgentGuard
 
 The agent reads the public project brief, queries open tickets, searches the local knowledge base, generates a report, and writes it to `data/demo_workspace/scratch/agent_report.md`.
 
-## 5. List Attack Scenarios
+## 5. Run The Full LangGraph Autonomous Agent
+
+```powershell
+python -m pip install -e ".[langgraph]"
+python -m agentguard autonomous-agent --simulate-attack --audit runs\autonomous_agent_audit.jsonl
+```
+
+This runs a complete LangGraph LLM loop: the model emits tool calls, AgentGuard executes or blocks those calls through the gateway, tool observations return to the model, and the model continues until it produces a final answer. With `--simulate-attack`, the scripted model attempts a poisoned private-token follow-up that is blocked before the agent writes its report.
+
+To use a real provider-backed model instead of the reproducible scripted model, install the provider package and pass a LangChain model name with `--model provider:model-name`.
+
+## 6. Run The LangGraph Adapter Demo
+
+```powershell
+python -m pip install -e ".[langgraph]"
+python -m agentguard langgraph-demo --audit runs\langgraph_audit.jsonl
+```
+
+This builds a real LangGraph `StateGraph` with `LangGraphGatewayAdapter.tool_node`, executes a framework tool call, and writes a normal AgentGuard audit event.
+
+## 7. List Attack Scenarios
 
 ```powershell
 python -m agentguard list-attacks
@@ -50,7 +70,7 @@ python -m agentguard list-attacks
 
 The catalog includes direct prompt injection, SOC KB poisoning, destructive tool steering, parameter tampering, and secret leakage through threat-intelligence lookup.
 
-## 6. Replay An Indirect Prompt Injection
+## 8. Replay An Indirect Prompt Injection
 
 ```powershell
 python -m agentguard demo --task ag-inj-001 --audit runs\demo_audit.jsonl
@@ -58,7 +78,7 @@ python -m agentguard demo --task ag-inj-001 --audit runs\demo_audit.jsonl
 
 The first search step is allowed. The second step, induced by poisoned retrieved content, attempts to read `secrets.env` and is blocked by prompt-injection and parameter-policy signals.
 
-## 7. Replay Knowledge-Base Poisoning Cases
+## 9. Replay Knowledge-Base Poisoning Cases
 
 ```powershell
 python -m agentguard demo --task ag-inj-005 --audit runs\kb_attack_audit.jsonl
@@ -68,7 +88,7 @@ python -m agentguard security-agent "Triage SOC-104 using vendor advisory guidan
 
 The KB search is allowed, but injected follow-ups that try to read `secrets.env` or `cloud_tokens.env` are blocked. The SOC agent also quarantines poisoned retrieved content before writing the final report.
 
-## 8. Replay A High-Risk Confirmation Case
+## 10. Replay A High-Risk Confirmation Case
 
 ```powershell
 python -m agentguard demo --task ag-risk-001 --audit runs\risk_audit.jsonl
@@ -77,7 +97,7 @@ python -m agentguard confirm-demo --approve --audit runs\confirm_audit.jsonl
 
 The first command shows `require_confirmation`. The second command records the confirmation request, approves it, and re-executes the safe computation with `confirmed=true`.
 
-## 9. Run A Raw Tool Call
+## 11. Run A Raw Tool Call
 
 ```powershell
 python -m agentguard demo --call-json "{\"tool_name\":\"api.get\",\"params\":{\"url\":\"http://127.0.0.1:8080/metadata\"}}" --context-json "{\"user_id\":\"demo\",\"role\":\"operator\",\"scopes\":[\"network:api\"]}"
