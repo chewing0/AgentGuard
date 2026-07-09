@@ -13,6 +13,8 @@ env/
 .codex/
 .codex-*/
 
+configs/*.local.json
+
 build/
 dist/
 *.egg-info/

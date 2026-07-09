@@ -53,6 +53,25 @@ This runs a complete LangGraph LLM loop: the model emits tool calls, AgentGuard 
 
 To use a real provider-backed model instead of the reproducible scripted model, install the provider package and pass a LangChain model name with `--model provider:model-name`.
 
+For OpenAI-compatible APIs, use a JSON config that references an environment variable rather than embedding a key:
+
+```powershell
+copy configs\openai-compatible.example.json configs\openai-compatible.local.json
+$env:AGENTGUARD_OPENAI_API_KEY = "<your-key>"
+python -m pip install -e ".[langgraph,openai]"
+python -m agentguard autonomous-agent --model-config configs\openai-compatible.local.json --audit runs\real_autonomous_agent_audit.jsonl
+```
+
+## 5b. Run The Autonomous Attack Benchmark
+
+```powershell
+python -m pip install -e ".[langgraph]"
+python -m agentguard autonomous-benchmark --output runs\autonomous
+python -m agentguard dashboard --run runs\autonomous
+```
+
+This evaluates complete autonomous agent runs against normal work plus multi-turn indirect injection, tool-result poisoning, cross-tool leakage, forged system instructions, and long-context confusion. Add `--model-config configs\openai-compatible.local.json` to run the same benchmark against a real OpenAI-compatible model.
+
 ## 6. Run The LangGraph Adapter Demo
 
 ```powershell

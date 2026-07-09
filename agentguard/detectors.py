@@ -22,14 +22,23 @@ class PromptInjectionDetector:
     _patterns: list[tuple[str, RiskLevel, str]] = [
         (r"\bignore (all )?(previous|prior|above) (instructions|rules)\b", RiskLevel.HIGH, "instruction override"),
         (r"\bdisregard (the )?(system|developer|previous) (message|instructions)\b", RiskLevel.HIGH, "instruction override"),
+        (r"\byou are now (the )?(system|developer|root|admin)\b", RiskLevel.CRITICAL, "forged authority role"),
+        (r"\b(system|developer) (message|instruction|override)\s*:", RiskLevel.HIGH, "forged system instruction"),
+        (r"\bhighest priority instruction\b", RiskLevel.HIGH, "priority confusion"),
         (r"\breveal (the )?(system prompt|developer message|hidden instructions)\b", RiskLevel.HIGH, "system prompt extraction"),
         (r"\bexfiltrate\b|\bsend (.*)(secret|token|password|api key)", RiskLevel.CRITICAL, "data exfiltration intent"),
         (r"\bcall (the )?(delete|exec|shell|database|file) tool\b", RiskLevel.HIGH, "tool steering"),
+        (r"\b(tool result|observation) says? to\b", RiskLevel.HIGH, "tool-result instruction poisoning"),
         (r"\buse (the )?(admin|root|sudo) (tool|permission|mode)\b", RiskLevel.HIGH, "privilege escalation"),
         (r"\bdelete (all|every|the) (files|records|database)\b", RiskLevel.CRITICAL, "destructive instruction"),
         (r"\bBEGIN_(SYSTEM|DEVELOPER)_OVERRIDE\b", RiskLevel.CRITICAL, "synthetic override marker"),
-        (r"\bcopy .*\.env\b|\bread .*secrets?\b", RiskLevel.HIGH, "secret file targeting"),
+        (
+            r"\b(copy|read|open)\b[^\n]{0,160}\.env\b|\b(read|open)\b[^\n]{0,160}\bsecrets?\b|\bcloud_tokens\.env\b",
+            RiskLevel.HIGH,
+            "secret file targeting",
+        ),
         (r"\bbase64\b.*\b(token|secret|password)\b", RiskLevel.HIGH, "encoded exfiltration"),
+        (r"\b(hidden|tail|final) instruction\b.*\b(ignore|disregard|override)\b", RiskLevel.HIGH, "long-context instruction smuggling"),
     ]
 
     def detect(self, text: str) -> list[RiskSignal]:
@@ -148,4 +157,3 @@ def _dedupe_signals(signals: list[RiskSignal]) -> list[RiskSignal]:
         seen.add(key)
         out.append(signal)
     return out
-

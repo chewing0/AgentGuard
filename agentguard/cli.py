@@ -16,8 +16,10 @@ from .agents import (
 from .audit import AuditLogger, read_audit, summarize_events
 from .attacks import builtin_attack_scenarios
 from .benchmarks import load_tasks
+from .autonomous_evaluation import run_autonomous_benchmark
 from .evaluation import run_evaluation
 from .gateway import SecurityGateway
+from .model_config import load_chat_model_from_config
 from .registry import ToolRegistry
 from .schemas import SecurityContext, ToolCall
 from .tools import attach_builtin_handlers
@@ -26,6 +28,7 @@ from .ui import build_dashboard
 
 PROJECT_ROOT = Path.cwd()
 DEFAULT_TASKS = PROJECT_ROOT / "data" / "benchmark_tasks.jsonl"
+DEFAULT_AUTONOMOUS_TASKS = PROJECT_ROOT / "data" / "autonomous_benchmark_tasks.jsonl"
 DEFAULT_TOOLS = PROJECT_ROOT / "data" / "tools.json"
 DEFAULT_RUNS = PROJECT_ROOT / "runs"
 
@@ -92,10 +95,21 @@ def main(argv: list[str] | None = None) -> int:
     autonomous.add_argument("--tools", default=str(DEFAULT_TOOLS))
     autonomous.add_argument("--audit", default=str(DEFAULT_RUNS / "autonomous_agent_audit.jsonl"))
     autonomous.add_argument("--report-path", default="data/security_ops_workspace/reports/langgraph_SOC-104_triage.md")
-    autonomous.add_argument("--model", help="Real LangChain chat model name, for example openai:gpt-4.1-mini.")
+    autonomous_model = autonomous.add_mutually_exclusive_group()
+    autonomous_model.add_argument("--model", help="Real LangChain chat model name, for example openai:gpt-4.1-mini.")
+    autonomous_model.add_argument("--model-config", help="JSON config for an OpenAI-compatible model.")
     autonomous.add_argument("--simulate-attack", action="store_true", help="Script the LLM to follow poisoned retrieved content.")
     autonomous.add_argument("--untrusted", action="store_true", help="Treat task and retrieved context as untrusted.")
     autonomous.add_argument("--recursion-limit", type=int, default=20)
+
+    autonomous_benchmark = sub.add_parser("autonomous-benchmark", help="Run full autonomous-agent attack benchmark tasks.")
+    autonomous_benchmark.add_argument("--tasks", default=str(DEFAULT_AUTONOMOUS_TASKS))
+    autonomous_benchmark.add_argument("--tools", default=str(DEFAULT_TOOLS))
+    autonomous_benchmark.add_argument("--output", default=str(DEFAULT_RUNS / "autonomous"))
+    autonomous_benchmark_model = autonomous_benchmark.add_mutually_exclusive_group()
+    autonomous_benchmark_model.add_argument("--model", help="Real LangChain chat model name, for example openai:gpt-4.1-mini.")
+    autonomous_benchmark_model.add_argument("--model-config", help="JSON config for an OpenAI-compatible model.")
+    autonomous_benchmark.add_argument("--recursion-limit", type=int, default=20)
 
     attacks = sub.add_parser("list-attacks", help="List built-in attack scenarios.")
     attacks.add_argument("--json", action="store_true", help="Print machine-readable scenario JSON.")
@@ -132,6 +146,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_langgraph_demo(args)
     if args.command == "autonomous-agent":
         return _cmd_autonomous_agent(args)
+    if args.command == "autonomous-benchmark":
+        return _cmd_autonomous_benchmark(args)
     if args.command == "list-attacks":
         return _cmd_list_attacks(args)
     if args.command == "confirm-demo":
@@ -328,14 +344,15 @@ def _cmd_autonomous_agent(args: argparse.Namespace) -> int:
         trusted_input=not (args.untrusted or args.simulate_attack),
     )
     try:
-        model = (
-            load_chat_model(args.model)
-            if args.model
-            else build_scripted_security_ops_model(
+        if args.model_config:
+            model = load_chat_model_from_config(args.model_config)
+        elif args.model:
+            model = load_chat_model(args.model)
+        else:
+            model = build_scripted_security_ops_model(
                 report_path=args.report_path,
                 simulate_attack=args.simulate_attack,
             )
-        )
         agent = LangGraphAutonomousAgent(
             gateway,
             model,
@@ -359,6 +376,27 @@ def _cmd_autonomous_agent(args: argparse.Namespace) -> int:
         print("Final message:")
         print(run.metadata["final_message"])
     print(f"Audit written to {args.audit}")
+    return 0
+
+
+def _cmd_autonomous_benchmark(args: argparse.Namespace) -> int:
+    try:
+        result = run_autonomous_benchmark(
+            tasks_path=args.tasks,
+            tools_path=args.tools,
+            workspace_root=PROJECT_ROOT,
+            output_dir=args.output,
+            model_config_path=args.model_config,
+            model_name=args.model,
+            recursion_limit=args.recursion_limit,
+        )
+    except Exception as exc:
+        print(f"Autonomous benchmark failed: {type(exc).__name__}: {exc}", file=sys.stderr)
+        return 1
+    print(result.markdown())
+    print()
+    print(f"Wrote metrics to {Path(args.output) / 'metrics.json'}")
+    print(f"Wrote report to {Path(args.output) / 'report.md'}")
     return 0
 
 

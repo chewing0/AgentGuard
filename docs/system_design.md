@@ -46,6 +46,7 @@ flowchart LR
 - `agentguard.audit`: writes and summarizes JSONL audit traces.
 - `agentguard.metrics`: shared metric definitions and computation.
 - `agentguard.evaluation`: compares protection modes on labeled benchmark steps.
+- `agentguard.autonomous_evaluation`: runs complete autonomous-agent attack tasks and scores required tool completion, unsafe tool blocking, and forbidden output leakage.
 - `agentguard.tools`: deterministic demo tools for reproducible experiments.
 - `agentguard.ui`: static dashboard generation from metrics and audit logs.
 
@@ -98,6 +99,8 @@ Each step contains:
 
 The benchmark also includes local KB poisoning cases where `kb.search` returns content that attempts to steer an agent into reading private token files.
 
+`data/autonomous_benchmark_tasks.jsonl` complements the trace benchmark with complete `LangGraphAutonomousAgent` runs. These tasks preserve the same gateway mediation but let the model plan, call tools, observe blocked results, revise state, and continue. The default scripted model keeps CI deterministic; `--model-config` switches the same task set to a real OpenAI-compatible model.
+
 ## Tested Agent: Security Operations Agent
 
 `SecurityOperationsAgent` is the main protected agent. It models a SOC analyst workflow rather than a toy report generator:
@@ -130,6 +133,8 @@ Human task
 ```
 
 The local demo uses a scripted tool-calling ChatModel for reproducibility, while the same class can accept a real LangChain ChatModel loaded from a provider package.
+
+The autonomous agent keeps lightweight runtime state: completed tools, blocked tools, failed tool results, retry counts, and plan-revision notes. After a blocked or failed tool call, the next model turn receives a compact memory summary instructing it to revise the plan rather than repeat the same unsafe call.
 
 `LangGraphGatewayAdapter` is the framework boundary used by the autonomous agent. It supports two entry points:
 
