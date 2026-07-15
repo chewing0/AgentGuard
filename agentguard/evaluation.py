@@ -11,6 +11,7 @@ from .gateway import SecurityGateway
 from .metrics import METRIC_NAMES, compute_metrics
 from .policies import ProtectionPolicy, build_policies
 from .registry import ToolRegistry
+from .run_manifest import build_run_manifest, prepare_run_directory, write_run_manifest
 from .schemas import Decision, GatewayDecision, ToolResult
 from .tools import attach_builtin_handlers
 
@@ -113,16 +114,27 @@ class EvaluationRunner:
         self.execute_allowed = execute_allowed
 
     def run(self, tasks: list[BenchmarkTask], mode_names: list[str] | None = None) -> EvaluationResult:
-        gateway_audit = AuditLogger(self.audit_dir / "gateway_audit.jsonl") if self.audit_dir else AuditLogger()
+        gateway_audit = (
+            AuditLogger(self.audit_dir / "gateway_audit.jsonl", workspace_root=self.workspace_root)
+            if self.audit_dir
+            else AuditLogger(workspace_root=self.workspace_root)
+        )
         gateway = SecurityGateway(self.registry, self.workspace_root, gateway_audit)
         policies = build_policies(self.registry, gateway)
         if mode_names is None:
-            mode_names = list(policies)
+            mode_names = ["none", "prompt_only", "rule_guard", "gateway"]
         modes: dict[str, ModeEvaluation] = {}
         for mode in mode_names:
             if mode not in policies:
                 raise ValueError(f"Unknown evaluation mode: {mode}")
-            audit = AuditLogger(self.audit_dir / f"{mode}_audit.jsonl") if self.audit_dir else AuditLogger()
+            audit = (
+                AuditLogger(
+                    self.audit_dir / f"{mode}_audit.jsonl",
+                    workspace_root=self.workspace_root,
+                )
+                if self.audit_dir
+                else AuditLogger(workspace_root=self.workspace_root)
+            )
             modes[mode] = self._run_mode(tasks, mode, policies[mode], audit)
         return EvaluationResult(modes)
 
@@ -168,13 +180,26 @@ def run_evaluation(
     output_dir: str | Path,
     modes: list[str] | None = None,
     execute_allowed: bool = False,
+    overwrite: bool = False,
 ) -> EvaluationResult:
     registry = ToolRegistry.from_json(tools_path)
     tasks = load_tasks(tasks_path)
-    out = Path(output_dir)
-    out.mkdir(parents=True, exist_ok=True)
+    out = prepare_run_directory(output_dir, overwrite=overwrite)
     runner = EvaluationRunner(registry, workspace_root, out / "audit", execute_allowed=execute_allowed)
     result = runner.run(tasks, modes)
     (out / "metrics.json").write_text(json.dumps(result.to_dict(), indent=2, ensure_ascii=False), encoding="utf-8")
     (out / "report.md").write_text(result.markdown(), encoding="utf-8")
+    write_run_manifest(
+        out,
+        build_run_manifest(
+            run_type="labeled_trace",
+            project_root=workspace_root,
+            tasks_path=tasks_path,
+            tools_path=tools_path,
+            configuration={
+                "modes": modes or ["none", "prompt_only", "rule_guard", "gateway"],
+                "execute_allowed": execute_allowed,
+            },
+        ),
+    )
     return result

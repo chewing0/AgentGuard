@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "run_id": "24b0d1286c074ba3bb43a5c5e4420087",
+  "run_type": "provider_autonomous",
+  "created_at": "2026-07-14T03:35:51.598971+00:00",
+  "git": {
+    "commit": "ff4da7782adf55861da6a93a35bc0ccfcc3f0aed",
+    "dirty": true
+  },
+  "environment": {
+    "python": "3.12.4",
+    "implementation": "CPython",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "agentguard": "0.1.0",
+    "dependencies": {
+      "langgraph": "1.2.9",
+      "langchain": "1.3.13",
+      "langchain-core": "1.4.9",
+      "pydantic": "2.13.4"
+    }
+  },
+  "inputs": {
+    "tasks": {
+      "path": "data/provider_smoke_benchmark_tasks.jsonl",
+      "sha256": "397fc35f6a827d030ea08d08e5a98c13624fcefff637df7a297f5257d7d4b00b"
+    },
+    "tools": {
+      "path": "data/tools.json",
+      "sha256": "779636b310254b1df4dd594aacd4069b5a18c14f730c87ca548a9608fb945934"
+    }
+  },
+  "configuration": {
+    "recursion_limit": 12,
+    "model": {
+      "source": "config_file",
+      "provider": "openai",
+      "model": "Pro/zai-org/GLM-5.1",
+      "base_url": "https://api.siliconflow.cn/v1",
+      "api_key_env": "AGENTGUARD_OPENAI_API_KEY",
+      "timeout_ms": 600000,
+      "temperature": 0.0,
+      "max_retries": 2,
+      "extra_keys": []
+    }
+  }
+}

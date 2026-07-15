@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="520" viewBox="0 0 960 520" role="img" aria-labelledby="title desc">
+  <title id="title">AgentGuard internal deterministic regression comparison</title>
+  <desc id="desc">Known labeled-call regression evidence and unsafe-call rates across no guard, prompt-only proxy, rule guard, and AgentGuard gateway modes.</desc>
+  <rect width="960" height="520" fill="#ffffff"/>
+  <rect x="28" y="24" width="904" height="472" rx="8" fill="#f7f9fb" stroke="#d7dde5"/>
+  <text x="56" y="68" fill="#17202a" font-family="Arial, Helvetica, sans-serif" font-size="26" font-weight="700">Internal deterministic labeled-call regression</text>
+  <text x="56" y="96" fill="#5d6978" font-family="Arial, Helvetica, sans-serif" font-size="14">35 tasks · 44 tool-call steps · 26 labeled unsafe steps · 12 attack/utility categories</text>
+
+  <g font-family="Arial, Helvetica, sans-serif">
+    <rect x="56" y="124" width="194" height="72" rx="8" fill="#ffffff" stroke="#d7dde5"/>
+    <text x="72" y="151" fill="#5d6978" font-size="13">Safe calls allowed</text>
+    <text x="72" y="181" fill="#147a53" font-size="28" font-weight="700">18/18</text>
+
+    <rect x="266" y="124" width="194" height="72" rx="8" fill="#ffffff" stroke="#d7dde5"/>
+    <text x="282" y="151" fill="#5d6978" font-size="13">Unsafe execution prevented</text>
+    <text x="282" y="181" fill="#147a53" font-size="28" font-weight="700">26/26</text>
+
+    <rect x="476" y="124" width="194" height="72" rx="8" fill="#ffffff" stroke="#d7dde5"/>
+    <text x="492" y="151" fill="#5d6978" font-size="13">Unsafe calls blocked</text>
+    <text x="492" y="181" fill="#147a53" font-size="28" font-weight="700">25</text>
+
+    <rect x="686" y="124" width="194" height="72" rx="8" fill="#ffffff" stroke="#d7dde5"/>
+    <text x="702" y="151" fill="#5d6978" font-size="13">Confirmation required</text>
+    <text x="702" y="181" fill="#a15c07" font-size="28" font-weight="700">1</text>
+  </g>
+
+  <g font-family="Arial, Helvetica, sans-serif">
+    <text x="56" y="238" fill="#17202a" font-size="18" font-weight="700">Unsafe calls allowed by defense mode</text>
+    <text x="56" y="262" fill="#5d6978" font-size="13">Lower is better. Bars use the refreshed run in runs/latest.</text>
+
+    <line x1="222" y1="296" x2="842" y2="296" stroke="#d7dde5"/>
+    <line x1="222" y1="296" x2="222" y2="424" stroke="#d7dde5"/>
+    <line x1="532" y1="296" x2="532" y2="424" stroke="#e7ebf0"/>
+    <line x1="842" y1="296" x2="842" y2="424" stroke="#e7ebf0"/>
+    <text x="214" y="448" fill="#5d6978" font-size="12">0</text>
+    <text x="522" y="448" fill="#5d6978" font-size="12">0.5</text>
+    <text x="832" y="448" fill="#5d6978" font-size="12">1.0</text>
+
+    <text x="72" y="318" fill="#17202a" font-size="14">none</text>
+    <rect x="222" y="300" width="620" height="24" rx="4" fill="#b42318"/>
+    <text x="858" y="318" fill="#17202a" font-size="14" font-weight="700">1.0000</text>
+
+    <text x="72" y="352" fill="#17202a" font-size="14">prompt_only</text>
+    <rect x="222" y="334" width="596" height="24" rx="4" fill="#d96d15"/>
+    <text x="858" y="352" fill="#17202a" font-size="14" font-weight="700">0.9615</text>
+
+    <text x="72" y="386" fill="#17202a" font-size="14">rule_guard</text>
+    <rect x="222" y="368" width="286" height="24" rx="4" fill="#a15c07"/>
+    <text x="858" y="386" fill="#17202a" font-size="14" font-weight="700">0.4615</text>
+
+    <text x="72" y="420" fill="#17202a" font-size="14">gateway</text>
+    <circle cx="222" cy="412" r="7" fill="#147a53"/>
+    <rect x="222" y="402" width="4" height="20" rx="2" fill="#147a53"/>
+    <text x="858" y="420" fill="#147a53" font-size="14" font-weight="700">0.0000</text>
+  </g>
+
+  <text x="56" y="476" fill="#5d6978" font-family="Arial, Helvetica, sans-serif" font-size="12">Source: python -m agentguard evaluate --output runs/latest · Known synthetic cases only; not provider-backed or held-out robustness evidence.</text>
+</svg>

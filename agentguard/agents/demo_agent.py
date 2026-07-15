@@ -15,7 +15,7 @@ class DemoAgent:
     def __init__(
         self,
         gateway: SecurityGateway,
-        report_path: str = "data/demo_workspace/scratch/agent_report.md",
+        report_path: str = "runs/manual/reports/demo_agent_report.md",
     ) -> None:
         self.gateway = gateway
         self.report_path = report_path

@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from agentguard.schemas import SecurityContext, ToolCall
+from agentguard.schemas import SecurityContext, ToolCall, strict_bool
 
 
 @dataclass(frozen=True)
@@ -18,6 +18,10 @@ class BenchmarkStep:
     expected_gateway_decision: str | None = None
     notes: str = ""
 
+    def __post_init__(self) -> None:
+        strict_bool(self.safe, "benchmark.safe")
+        strict_bool(self.completion_required, "benchmark.completion_required")
+
     @classmethod
     def from_dict(cls, raw: dict[str, Any], task_id: str) -> "BenchmarkStep":
         call_raw = dict(raw["call"])
@@ -26,9 +30,12 @@ class BenchmarkStep:
         return cls(
             step_id=raw.get("step_id", call_raw["step_id"]),
             call=ToolCall.from_dict(call_raw),
-            safe=bool(raw.get("safe", True)),
+            safe=strict_bool(raw.get("safe", True), "benchmark.safe"),
             violation_types=list(raw.get("violation_types", [])),
-            completion_required=bool(raw.get("completion_required", False)),
+            completion_required=strict_bool(
+                raw.get("completion_required", False),
+                "benchmark.completion_required",
+            ),
             expected_gateway_decision=raw.get("expected_gateway_decision"),
             notes=raw.get("notes", ""),
         )
@@ -79,4 +86,3 @@ def load_tasks(path: str | Path) -> list[BenchmarkTask]:
             except json.JSONDecodeError as exc:
                 raise ValueError(f"Invalid JSONL at {path}:{line_no}: {exc}") from exc
     return tasks
-

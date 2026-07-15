@@ -1,0 +1,19 @@
+cff-version: 1.2.0
+message: "If you use AgentGuard in research, please cite this software."
+title: "AgentGuard: Runtime Policy Enforcement for Tool-Using LLM Agents"
+type: software
+version: 0.1.0
+date-released: 2026-07-11
+authors:
+  - name: "AgentGuard Contributors"
+repository-code: "https://github.com/chewing0/AgentGuard"
+license: MIT
+keywords:
+  - LLM agents
+  - tool security
+  - prompt injection
+  - runtime policy enforcement
+  - security benchmark
+abstract: >-
+  AgentGuard is a research prototype for deterministic evaluation and
+  execution-boundary mediation of tool calls made by LLM agents.

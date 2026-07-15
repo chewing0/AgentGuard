@@ -5,6 +5,14 @@ from enum import Enum, IntEnum
 from typing import Any
 
 
+def strict_bool(value: Any, field_name: str) -> bool:
+    """Return a real boolean and reject truthy strings/numbers fail-closed."""
+
+    if type(value) is not bool:
+        raise ValueError(f"{field_name} must be a boolean, got {type(value).__name__}")
+    return value
+
+
 class OperationType(str, Enum):
     READ = "read"
     WRITE = "write"
@@ -26,6 +34,10 @@ class RiskLevel(IntEnum):
     def from_value(cls, value: str | int | "RiskLevel") -> "RiskLevel":
         if isinstance(value, RiskLevel):
             return value
+        # ``bool`` is a subclass of ``int`` in Python. Treating JSON ``true``
+        # as risk level 1 would silently downgrade a malformed policy to LOW.
+        if isinstance(value, bool):
+            raise ValueError("risk_level must be a named level or integer from 1 to 4")
         if isinstance(value, int):
             return cls(value)
         normalized = str(value).strip().upper()
@@ -78,18 +90,30 @@ class ParameterPolicy:
     readonly: bool = False
     allow_private_networks: bool = False
 
+    def __post_init__(self) -> None:
+        strict_bool(self.required, "parameter.required")
+        strict_bool(self.readonly, "parameter.readonly")
+        strict_bool(self.allow_private_networks, "parameter.allow_private_networks")
+        if self.max_length is not None and (
+            type(self.max_length) is not int or self.max_length < 0
+        ):
+            raise ValueError("parameter.max_length must be a non-negative integer")
+
     @classmethod
     def from_dict(cls, raw: dict[str, Any]) -> "ParameterPolicy":
         return cls(
             kind=raw.get("kind", "string"),
-            required=bool(raw.get("required", False)),
+            required=strict_bool(raw.get("required", False), "parameter.required"),
             allowed_values=list(raw.get("allowed_values", [])),
             allowed_roots=list(raw.get("allowed_roots", [])),
             deny_patterns=list(raw.get("deny_patterns", [])),
             allowed_domains=list(raw.get("allowed_domains", [])),
             max_length=raw.get("max_length"),
-            readonly=bool(raw.get("readonly", False)),
-            allow_private_networks=bool(raw.get("allow_private_networks", False)),
+            readonly=strict_bool(raw.get("readonly", False), "parameter.readonly"),
+            allow_private_networks=strict_bool(
+                raw.get("allow_private_networks", False),
+                "parameter.allow_private_networks",
+            ),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -119,6 +143,14 @@ class ToolSpec:
     redact_output: bool = True
     metadata: dict[str, Any] = field(default_factory=dict)
 
+    def __post_init__(self) -> None:
+        strict_bool(self.requires_confirmation, "tool.requires_confirmation")
+        strict_bool(self.redact_output, "tool.redact_output")
+        if not isinstance(self.operation, OperationType):
+            raise ValueError("tool.operation must be an OperationType")
+        if not isinstance(self.risk_level, RiskLevel):
+            raise ValueError("tool.risk_level must be a RiskLevel")
+
     @classmethod
     def from_dict(cls, raw: dict[str, Any]) -> "ToolSpec":
         return cls(
@@ -128,12 +160,15 @@ class ToolSpec:
             risk_level=RiskLevel.from_value(raw["risk_level"]),
             required_scopes=set(raw.get("required_scopes", [])),
             allowed_roles=set(raw.get("allowed_roles", [])),
-            requires_confirmation=bool(raw.get("requires_confirmation", False)),
+            requires_confirmation=strict_bool(
+                raw.get("requires_confirmation", False),
+                "tool.requires_confirmation",
+            ),
             parameters={
                 key: ParameterPolicy.from_dict(value)
                 for key, value in raw.get("parameters", {}).items()
             },
-            redact_output=bool(raw.get("redact_output", True)),
+            redact_output=strict_bool(raw.get("redact_output", True), "tool.redact_output"),
             metadata=dict(raw.get("metadata", {})),
         )
 
@@ -161,15 +196,19 @@ class SecurityContext:
     session_id: str = "default"
     trusted_input: bool = True
 
+    def __post_init__(self) -> None:
+        strict_bool(self.confirmed, "context.confirmed")
+        strict_bool(self.trusted_input, "context.trusted_input")
+
     @classmethod
     def from_dict(cls, raw: dict[str, Any]) -> "SecurityContext":
         return cls(
             user_id=raw.get("user_id", "anonymous"),
             role=raw.get("role", "guest"),
             scopes=set(raw.get("scopes", [])),
-            confirmed=bool(raw.get("confirmed", False)),
+            confirmed=strict_bool(raw.get("confirmed", False), "context.confirmed"),
             session_id=raw.get("session_id", "default"),
-            trusted_input=bool(raw.get("trusted_input", True)),
+            trusted_input=strict_bool(raw.get("trusted_input", True), "context.trusted_input"),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -245,6 +284,9 @@ class ToolResult:
     error: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
+    def __post_init__(self) -> None:
+        strict_bool(self.ok, "tool_result.ok")
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "ok": self.ok,
@@ -272,4 +314,3 @@ class AuditEvent:
             "result": self.result,
             "labels": self.labels,
         }
-

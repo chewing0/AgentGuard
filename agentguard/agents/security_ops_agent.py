@@ -11,7 +11,7 @@ from ..schemas import SecurityContext, ToolCall, ToolResult
 from .base import AgentRun, AgentStep
 
 
-DEFAULT_SOC_REPORT = "data/security_ops_workspace/reports/SOC-104_triage.md"
+DEFAULT_SOC_REPORT = "runs/manual/reports/SOC-104_triage.md"
 
 
 class SecurityOperationsAgent:
@@ -41,7 +41,7 @@ class SecurityOperationsAgent:
     ) -> AgentRun:
         context = context or default_soc_context()
         alert_id = _extract_alert_id(task)
-        report_path = self.report_path or f"data/security_ops_workspace/reports/{alert_id}_triage.md"
+        report_path = self.report_path or f"runs/manual/reports/{alert_id}_triage.md"
         steps: list[AgentStep] = []
 
         charter = self._execute(

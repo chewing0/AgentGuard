@@ -1,0 +1,79 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="620" viewBox="0 0 1100 620" role="img" aria-labelledby="title desc">
+  <title id="title">AgentGuard architecture</title>
+  <desc id="desc">Architecture diagram showing agents, LangGraph adapter, security gateway, policy engine, tools, audit logs, and dashboard.</desc>
+  <rect width="1100" height="620" fill="#ffffff"/>
+  <rect x="28" y="24" width="1044" height="568" rx="8" fill="#f7f9fb" stroke="#d7dde5"/>
+  <text x="56" y="68" fill="#17202a" font-family="Arial, Helvetica, sans-serif" font-size="26" font-weight="700">AgentGuard runtime tool-call security gateway</text>
+  <text x="56" y="96" fill="#5d6978" font-family="Arial, Helvetica, sans-serif" font-size="14">Policy is enforced at the execution boundary: every candidate tool call is inspected before any backend runs.</text>
+
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L8,3 z" fill="#5d6978"/>
+    </marker>
+  </defs>
+
+  <g font-family="Arial, Helvetica, sans-serif">
+    <rect x="58" y="146" width="206" height="116" rx="8" fill="#ffffff" stroke="#d7dde5"/>
+    <text x="80" y="176" fill="#17202a" font-size="16" font-weight="700">Agents</text>
+    <text x="80" y="202" fill="#5d6978" font-size="12">SecurityOperationsAgent</text>
+    <text x="80" y="224" fill="#5d6978" font-size="12">DemoAgent</text>
+    <text x="80" y="246" fill="#5d6978" font-size="12">LangGraphAutonomousAgent</text>
+
+    <rect x="58" y="328" width="206" height="90" rx="8" fill="#ffffff" stroke="#d7dde5"/>
+    <text x="80" y="358" fill="#17202a" font-size="16" font-weight="700">Benchmarks</text>
+    <text x="80" y="384" fill="#5d6978" font-size="12">Labeled trace benchmark</text>
+    <text x="80" y="406" fill="#5d6978" font-size="12">Scripted LangGraph suite</text>
+
+    <line x1="264" y1="204" x2="332" y2="204" stroke="#5d6978" stroke-width="2" marker-end="url(#arrow)"/>
+    <line x1="264" y1="372" x2="332" y2="372" stroke="#5d6978" stroke-width="2" marker-end="url(#arrow)"/>
+
+    <rect x="340" y="146" width="198" height="116" rx="8" fill="#ffffff" stroke="#d7dde5"/>
+    <text x="362" y="176" fill="#17202a" font-size="16" font-weight="700">Framework adapter</text>
+    <text x="362" y="202" fill="#5d6978" font-size="12">LangGraphGatewayAdapter</text>
+    <text x="362" y="224" fill="#5d6978" font-size="12">Tool-name normalization</text>
+    <text x="362" y="246" fill="#5d6978" font-size="12">AgentStep trace export</text>
+
+    <rect x="340" y="328" width="198" height="90" rx="8" fill="#ffffff" stroke="#d7dde5"/>
+    <text x="362" y="358" fill="#17202a" font-size="16" font-weight="700">Tool registry</text>
+    <text x="362" y="384" fill="#5d6978" font-size="12">Risk level, scopes, roles</text>
+    <text x="362" y="406" fill="#5d6978" font-size="12">Parameter constraints</text>
+
+    <line x1="538" y1="204" x2="604" y2="204" stroke="#5d6978" stroke-width="2" marker-end="url(#arrow)"/>
+    <line x1="538" y1="372" x2="604" y2="372" stroke="#5d6978" stroke-width="2" marker-end="url(#arrow)"/>
+
+    <rect x="612" y="136" width="244" height="292" rx="8" fill="#ffffff" stroke="#0f5e9c" stroke-width="2"/>
+    <text x="636" y="170" fill="#17202a" font-size="18" font-weight="700">Security gateway</text>
+    <text x="636" y="194" fill="#5d6978" font-size="12">inspect or execute candidate tool calls</text>
+    <rect x="636" y="220" width="196" height="36" rx="6" fill="#eef3f8" stroke="#d7dde5"/>
+    <text x="656" y="243" fill="#17202a" font-size="13">Permission check</text>
+    <rect x="636" y="266" width="196" height="36" rx="6" fill="#eef3f8" stroke="#d7dde5"/>
+    <text x="656" y="289" fill="#17202a" font-size="13">Parameter policy check</text>
+    <rect x="636" y="312" width="196" height="36" rx="6" fill="#eef3f8" stroke="#d7dde5"/>
+    <text x="656" y="335" fill="#17202a" font-size="13">Prompt injection detector</text>
+    <rect x="636" y="358" width="196" height="36" rx="6" fill="#eef3f8" stroke="#d7dde5"/>
+    <text x="656" y="381" fill="#17202a" font-size="13">Regex outbound secret scan</text>
+    <text x="636" y="412" fill="#5d6978" font-size="12">Decision: allow · redact · confirm · block</text>
+
+    <line x1="856" y1="282" x2="918" y2="282" stroke="#5d6978" stroke-width="2" marker-end="url(#arrow)"/>
+
+    <rect x="926" y="146" width="118" height="272" rx="8" fill="#ffffff" stroke="#d7dde5"/>
+    <text x="948" y="176" fill="#17202a" font-size="16" font-weight="700">Tools</text>
+    <text x="948" y="204" fill="#5d6978" font-size="12">file</text>
+    <text x="948" y="226" fill="#5d6978" font-size="12">database</text>
+    <text x="948" y="248" fill="#5d6978" font-size="12">API</text>
+    <text x="948" y="270" fill="#5d6978" font-size="12">KB search</text>
+    <text x="948" y="292" fill="#5d6978" font-size="12">threat intel</text>
+    <text x="948" y="314" fill="#5d6978" font-size="12">code exec</text>
+    <rect x="948" y="350" width="72" height="28" rx="14" fill="#147a53"/>
+    <text x="963" y="369" fill="#ffffff" font-size="12" font-weight="700">allowed</text>
+
+    <line x1="734" y1="428" x2="734" y2="486" stroke="#5d6978" stroke-width="2" marker-end="url(#arrow)"/>
+    <rect x="584" y="494" width="300" height="54" rx="8" fill="#ffffff" stroke="#d7dde5"/>
+    <text x="608" y="526" fill="#17202a" font-size="15" font-weight="700">JSONL audit logs + static dashboard</text>
+
+    <rect x="58" y="462" width="480" height="86" rx="8" fill="#ffffff" stroke="#d7dde5"/>
+    <text x="80" y="492" fill="#17202a" font-size="16" font-weight="700">Why this split matters</text>
+    <text x="80" y="518" fill="#5d6978" font-size="12">Adapters keep framework glue out of policy logic; registry keeps tool risk declarative;</text>
+    <text x="80" y="540" fill="#5d6978" font-size="12">gateway keeps enforcement on the last step before side effects happen.</text>
+  </g>
+</svg>

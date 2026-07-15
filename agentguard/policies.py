@@ -4,6 +4,7 @@ from abc import ABC, abstractmethod
 from typing import Any
 
 from .detectors import PromptInjectionDetector, SensitiveDataDetector
+from .defense import PolicyEngine
 from .gateway import SecurityGateway
 from .registry import ToolRegistry
 from .schemas import (
@@ -91,8 +92,9 @@ class RuleGuardPolicy(ProtectionPolicy):
 class GatewayPolicy(ProtectionPolicy):
     name = "gateway"
 
-    def __init__(self, gateway: SecurityGateway) -> None:
+    def __init__(self, gateway: SecurityGateway, name: str = "gateway") -> None:
         self.gateway = gateway
+        self.name = name
 
     def inspect(self, call: ToolCall, context: SecurityContext) -> GatewayDecision:
         return self.gateway.inspect(call, context)
@@ -105,5 +107,16 @@ def build_policies(registry: ToolRegistry, gateway: SecurityGateway) -> dict[str
         RuleGuardPolicy(registry),
         GatewayPolicy(gateway),
     ]
+    for check in sorted(PolicyEngine.CHECKS):
+        engine = PolicyEngine(
+            registry,
+            workspace_root=gateway.workspace_root,
+            disabled_checks={check},
+        )
+        ablated_gateway = SecurityGateway(
+            registry,
+            workspace_root=gateway.workspace_root,
+            policy_engine=engine,
+        )
+        policies.append(GatewayPolicy(ablated_gateway, name=f"gateway_without_{check}"))
     return {policy.name: policy for policy in policies}
-

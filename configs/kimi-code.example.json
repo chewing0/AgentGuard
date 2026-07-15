@@ -1,0 +1,9 @@
+{
+  "provider": "openai",
+  "model": "kimi-for-coding",
+  "base_url": "https://api.kimi.com/coding/v1",
+  "api_key_env": "ANTHROPIC_AUTH_TOKEN",
+  "timeout_ms": 600000,
+  "temperature": 0,
+  "max_retries": 1
+}

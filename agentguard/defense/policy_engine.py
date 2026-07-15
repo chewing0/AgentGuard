@@ -25,17 +25,24 @@ from ..schemas import (
 class PolicyEngine:
     """Runs pre-execution policy checks for proposed tool calls."""
 
+    CHECKS = frozenset({"permissions", "prompt_injection", "parameters", "sensitive_data", "high_risk"})
+
     def __init__(
         self,
         registry: ToolRegistry,
         workspace_root: str | Path | None = None,
         prompt_detector: PromptInjectionDetector | None = None,
         sensitive_detector: SensitiveDataDetector | None = None,
+        disabled_checks: set[str] | frozenset[str] | None = None,
     ) -> None:
         self.registry = registry
         self.workspace_root = Path(workspace_root or Path.cwd()).resolve()
         self.prompt_detector = prompt_detector or PromptInjectionDetector()
         self.sensitive_detector = sensitive_detector or SensitiveDataDetector()
+        self.disabled_checks = frozenset(disabled_checks or ())
+        unknown_checks = self.disabled_checks - self.CHECKS
+        if unknown_checks:
+            raise ValueError(f"Unknown policy checks: {sorted(unknown_checks)}")
 
     def inspect(self, call: ToolCall, context: SecurityContext) -> GatewayDecision:
         spec = self.registry.get(call.tool_name)
@@ -58,12 +65,17 @@ class PolicyEngine:
         signals: list[RiskSignal] = []
         sanitized_params = dict(call.params)
 
-        signals.extend(self._check_permissions(spec, context))
-        signals.extend(self._check_prompt_injection(call, context))
-        param_signals, sanitized_params = self._check_parameters(spec, call.params)
-        signals.extend(param_signals)
-        signals.extend(self._check_sensitive_flow(spec, sanitized_params, call))
-        signals.extend(self._check_high_risk(spec))
+        if "permissions" not in self.disabled_checks:
+            signals.extend(self._check_permissions(spec, context))
+        if "prompt_injection" not in self.disabled_checks:
+            signals.extend(self._check_prompt_injection(call, context))
+        if "parameters" not in self.disabled_checks:
+            param_signals, sanitized_params = self._check_parameters(spec, call.params)
+            signals.extend(param_signals)
+        if "sensitive_data" not in self.disabled_checks:
+            signals.extend(self._check_sensitive_flow(spec, sanitized_params, call))
+        if "high_risk" not in self.disabled_checks:
+            signals.extend(self._check_high_risk(spec))
 
         risk_level = _max_risk([spec.risk_level, *[signal.level for signal in signals]])
         decision, reason = self._decide(spec, context, signals, risk_level)
@@ -122,7 +134,9 @@ class PolicyEngine:
         params: dict[str, Any],
     ) -> tuple[list[RiskSignal], dict[str, Any]]:
         signals: list[RiskSignal] = []
-        sanitized = dict(params)
+        # Build the executable payload from the declared schema instead of
+        # copying caller-controlled fields and trying to remove bad values.
+        sanitized: dict[str, Any] = {}
         for key, policy in spec.parameters.items():
             if policy.required and key not in params:
                 signals.append(
@@ -132,6 +146,16 @@ class PolicyEngine:
             if key not in params:
                 continue
             value = params[key]
+            if not _matches_parameter_type(value, policy.kind):
+                signals.append(
+                    RiskSignal(
+                        RiskSignalType.PARAMETER,
+                        RiskLevel.HIGH,
+                        f"Parameter {key} must have type {_parameter_type_name(policy.kind)}",
+                        type(value).__name__,
+                    )
+                )
+                continue
             validator = getattr(self, f"_validate_{policy.kind}", self._validate_string)
             value_signals, new_value = validator(key, value, policy)
             sanitized[key] = new_value
@@ -139,7 +163,7 @@ class PolicyEngine:
         unexpected = sorted(set(params) - set(spec.parameters))
         for key in unexpected:
             signals.append(
-                RiskSignal(RiskSignalType.PARAMETER, RiskLevel.MEDIUM, f"Unexpected parameter for {spec.name}: {key}", key)
+                RiskSignal(RiskSignalType.PARAMETER, RiskLevel.HIGH, f"Unexpected parameter for {spec.name}: {key}", key)
             )
         return signals, sanitized
 
@@ -153,7 +177,7 @@ class PolicyEngine:
         signals = self._generic_value_checks(key, text, policy)
         if policy.allowed_values and value not in policy.allowed_values:
             signals.append(
-                RiskSignal(RiskSignalType.PARAMETER, RiskLevel.MEDIUM, f"Parameter {key} is not in allowed values", text)
+                RiskSignal(RiskSignalType.PARAMETER, RiskLevel.HIGH, f"Parameter {key} is not in allowed values", text)
             )
         return signals, value
 
@@ -258,7 +282,7 @@ class PolicyEngine:
         signals: list[RiskSignal] = []
         if policy.max_length is not None and len(text) > policy.max_length:
             signals.append(
-                RiskSignal(RiskSignalType.PARAMETER, RiskLevel.MEDIUM, f"Parameter {key} exceeds max length", str(len(text)))
+                RiskSignal(RiskSignalType.PARAMETER, RiskLevel.HIGH, f"Parameter {key} exceeds max length", str(len(text)))
             )
         for pattern in policy.deny_patterns:
             if re.search(pattern, text, re.IGNORECASE):
@@ -322,10 +346,11 @@ class PolicyEngine:
                 OperationType.ADMIN,
             }:
                 return Decision.BLOCK, "Prompt injection attempted to steer a risky tool"
-        if spec.requires_confirmation and not context.confirmed:
-            return Decision.REQUIRE_CONFIRMATION, "Human confirmation required for high-risk tool"
-        if risk_level >= RiskLevel.CRITICAL and not context.confirmed:
-            return Decision.BLOCK, "Critical risk requires an explicit trusted path"
+        if "high_risk" not in self.disabled_checks:
+            if spec.requires_confirmation and not context.confirmed:
+                return Decision.REQUIRE_CONFIRMATION, "Human confirmation required for high-risk tool"
+            if risk_level >= RiskLevel.CRITICAL and not context.confirmed:
+                return Decision.BLOCK, "Critical risk requires an explicit trusted path"
         return Decision.ALLOW, "Policy checks passed"
 
 
@@ -358,3 +383,27 @@ def _is_private_host(hostname: str) -> bool:
         return ipaddress.ip_address(lowered).is_private
     except ValueError:
         return False
+
+
+def _matches_parameter_type(value: Any, kind: str) -> bool:
+    normalized = kind.strip().lower()
+    if normalized in {"boolean", "bool"}:
+        return type(value) is bool
+    if normalized in {"integer", "int"}:
+        return type(value) is int
+    if normalized in {"number", "float"}:
+        return type(value) in {int, float}
+    # Paths, SQL, URLs, and code are security-sensitive strings.  Refuse
+    # implicit conversion from lists, objects, booleans, or numbers.
+    return isinstance(value, str)
+
+
+def _parameter_type_name(kind: str) -> str:
+    normalized = kind.strip().lower()
+    if normalized in {"boolean", "bool"}:
+        return "boolean"
+    if normalized in {"integer", "int"}:
+        return "integer"
+    if normalized in {"number", "float"}:
+        return "number"
+    return "string"

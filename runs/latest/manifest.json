@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "run_id": "2ccfe45b1d184b47be6c487bf5130e11",
+  "run_type": "labeled_trace",
+  "created_at": "2026-07-13T06:42:37.940799+00:00",
+  "git": {
+    "commit": "ff4da7782adf55861da6a93a35bc0ccfcc3f0aed",
+    "dirty": true
+  },
+  "environment": {
+    "python": "3.12.4",
+    "implementation": "CPython",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "agentguard": "0.1.0",
+    "dependencies": {
+      "langgraph": "1.2.8",
+      "langchain": "0.3.27",
+      "langchain-core": "1.4.8",
+      "pydantic": "2.11.7"
+    }
+  },
+  "inputs": {
+    "tasks": {
+      "path": "data/benchmark_tasks.jsonl",
+      "sha256": "5420eb82cce39d04598cee7909dc1629b357e33f03d4e81706425c41609c9692"
+    },
+    "tools": {
+      "path": "data/tools.json",
+      "sha256": "779636b310254b1df4dd594aacd4069b5a18c14f730c87ca548a9608fb945934"
+    }
+  },
+  "configuration": {
+    "modes": [
+      "none",
+      "prompt_only",
+      "rule_guard",
+      "gateway"
+    ],
+    "execute_allowed": false
+  }
+}

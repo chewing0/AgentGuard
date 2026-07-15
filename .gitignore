@@ -15,6 +15,34 @@ env/
 
 configs/*.local.json
 
+# Direct demo reports belong to local runs, not to the source fixtures.
+data/demo_workspace/scratch/agent_report.md
+data/security_ops_workspace/reports/*.md
+!data/security_ops_workspace/reports/.gitkeep
+
+# Keep only the five curated reference snapshots and the runs index in Git.
+# All ad-hoc experiment ids, manual traces, and copied task workspaces stay local.
+runs/*
+!runs/README.md
+!runs/latest/
+!runs/latest/**
+!runs/autonomous/
+!runs/autonomous/**
+!runs/llm_security_scripted/
+!runs/llm_security_scripted/**
+!runs/provider_glm/
+!runs/provider_glm/**
+!runs/provider_siliconflow/
+!runs/provider_siliconflow/**
+runs/**/workspaces/
+
+# Keep credential files ignored even inside an allowlisted reference run.
+# The tracked *.env files under data/ are synthetic attack fixtures.
+.env
+.env.*
+*.env
+!.env.example
+
 build/
 dist/
 *.egg-info/

@@ -1,0 +1,69 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="640" viewBox="0 0 1100 640" role="img" aria-labelledby="title desc">
+  <title id="title">AgentGuard static dashboard summary graphic</title>
+  <desc id="desc">Illustrative, manually authored dashboard-style summary graphic; it is not a live product screenshot and its controls are visual only.</desc>
+  <rect width="1100" height="640" fill="#ffffff"/>
+  <rect x="26" y="22" width="1048" height="596" rx="8" fill="#f7f9fb" stroke="#d7dde5"/>
+  <rect x="26" y="22" width="1048" height="82" rx="8" fill="#eef3f8" stroke="#d7dde5"/>
+  <text x="56" y="62" fill="#17202a" font-family="Arial, Helvetica, sans-serif" font-size="28" font-weight="700">AgentGuard Dashboard Summary</text>
+  <text x="56" y="86" fill="#5d6978" font-family="Arial, Helvetica, sans-serif" font-size="14">Illustrative static summary graphic · not a live UI screenshot · confirmation controls are visual only.</text>
+
+  <g font-family="Arial, Helvetica, sans-serif">
+    <text x="56" y="142" fill="#17202a" font-size="18" font-weight="700">Internal Deterministic Regression Evidence</text>
+    <rect x="56" y="162" width="230" height="86" rx="8" fill="#ffffff" stroke="#d7dde5"/>
+    <text x="76" y="191" fill="#5d6978" font-size="13">Safe Calls Allowed</text>
+    <text x="76" y="226" fill="#147a53" font-size="30" font-weight="700">18/18</text>
+
+    <rect x="306" y="162" width="230" height="86" rx="8" fill="#ffffff" stroke="#d7dde5"/>
+    <text x="326" y="191" fill="#5d6978" font-size="13">Unsafe Execution Prevented</text>
+    <text x="326" y="226" fill="#147a53" font-size="30" font-weight="700">26/26</text>
+
+    <rect x="556" y="162" width="230" height="86" rx="8" fill="#ffffff" stroke="#d7dde5"/>
+    <text x="576" y="191" fill="#5d6978" font-size="13">Unsafe Calls Blocked</text>
+    <text x="576" y="226" fill="#147a53" font-size="30" font-weight="700">25</text>
+
+    <rect x="806" y="162" width="230" height="86" rx="8" fill="#ffffff" stroke="#d7dde5"/>
+    <text x="826" y="191" fill="#5d6978" font-size="13">Confirmation Required</text>
+    <text x="826" y="226" fill="#a15c07" font-size="30" font-weight="700">1</text>
+
+    <rect x="56" y="274" width="980" height="116" rx="8" fill="#ffffff" stroke="#d7dde5"/>
+    <rect x="56" y="274" width="980" height="36" rx="8" fill="#fbfcfd" stroke="#d7dde5"/>
+    <text x="76" y="298" fill="#5d6978" font-size="12" font-weight="700">Mode</text>
+    <text x="220" y="298" fill="#5d6978" font-size="12" font-weight="700">Eligible completion</text>
+    <text x="370" y="298" fill="#5d6978" font-size="12" font-weight="700">Unsafe</text>
+    <text x="520" y="298" fill="#5d6978" font-size="12" font-weight="700">Leakage</text>
+    <text x="670" y="298" fill="#5d6978" font-size="12" font-weight="700">High Risk</text>
+    <text x="820" y="298" fill="#5d6978" font-size="12" font-weight="700">Parameter</text>
+
+    <text x="76" y="331" fill="#17202a" font-size="13">none</text>
+    <text x="220" y="331" fill="#17202a" font-size="13">1.0</text>
+    <text x="370" y="331" fill="#b42318" font-size="13" font-weight="700">1.0</text>
+    <text x="520" y="331" fill="#b42318" font-size="13" font-weight="700">1.0</text>
+    <text x="670" y="331" fill="#b42318" font-size="13" font-weight="700">1.0</text>
+    <text x="820" y="331" fill="#b42318" font-size="13" font-weight="700">1.0</text>
+
+    <text x="76" y="361" fill="#17202a" font-size="13">gateway</text>
+    <text x="220" y="361" fill="#147a53" font-size="13" font-weight="700">1.0</text>
+    <text x="370" y="361" fill="#147a53" font-size="13" font-weight="700">0.0</text>
+    <text x="520" y="361" fill="#147a53" font-size="13" font-weight="700">0.0</text>
+    <text x="670" y="361" fill="#147a53" font-size="13" font-weight="700">0.0</text>
+    <text x="820" y="361" fill="#147a53" font-size="13" font-weight="700">0.0</text>
+
+    <text x="56" y="432" fill="#17202a" font-size="18" font-weight="700">Audit Timeline</text>
+    <rect x="56" y="454" width="980" height="122" rx="8" fill="#ffffff" stroke="#d7dde5"/>
+    <rect x="76" y="476" width="88" height="26" rx="13" fill="#147a53"/>
+    <text x="97" y="494" fill="#ffffff" font-size="12" font-weight="700">allow</text>
+    <text x="190" y="494" fill="#17202a" font-size="13">kb.search</text>
+    <text x="326" y="494" fill="#5d6978" font-size="13">Policy checks passed</text>
+
+    <rect x="76" y="518" width="88" height="26" rx="13" fill="#b42318"/>
+    <text x="97" y="536" fill="#ffffff" font-size="12" font-weight="700">block</text>
+    <text x="190" y="536" fill="#17202a" font-size="13">file.read</text>
+    <text x="326" y="536" fill="#5d6978" font-size="13">Parameter policy check failed; prompt injection and secret access detected</text>
+
+    <rect x="76" y="556" width="88" height="26" rx="13" fill="#a15c07"/>
+    <text x="86" y="574" fill="#ffffff" font-size="12" font-weight="700">review</text>
+    <text x="190" y="574" fill="#17202a" font-size="13">code.python</text>
+    <text x="326" y="574" fill="#5d6978" font-size="13">Human confirmation required for high-risk tool</text>
+    <text x="56" y="606" fill="#5d6978" font-size="12">Static display only — state-changing approval uses the gateway CLI/API confirmation flow.</text>
+  </g>
+</svg>

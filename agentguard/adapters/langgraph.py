@@ -3,11 +3,18 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from ..agents import AgentRun, AgentStep
 from ..gateway import SecurityGateway
 from ..schemas import GatewayDecision, SecurityContext, ToolCall, ToolResult, ToolSpec
+
+if TYPE_CHECKING:
+    from ..agents.base import AgentRun, AgentStep
+
+
+_MODEL_OBSERVATION_LIMIT = 64_000
+_MODEL_OBSERVATION_EDGE = 4_096
+_STRUCTURED_PROVENANCE_LIMIT = 128_000
 
 
 class LangGraphAdapterError(RuntimeError):
@@ -31,6 +38,7 @@ class LangGraphGatewayAdapter:
     def __post_init__(self) -> None:
         self.steps: list[AgentStep] = []
         self._counter = 0
+        self._structured_tool_source_content = ""
         self._framework_to_agentguard: dict[str, str] = {}
         for name in self.gateway.registry.names():
             framework_name = self.to_framework_tool_name(name)
@@ -64,7 +72,15 @@ class LangGraphGatewayAdapter:
         """Build LangChain ``StructuredTool`` wrappers for use in LangGraph graphs."""
 
         StructuredTool = _require_structured_tool()
-        names = tool_names or self.gateway.registry.names()
+        names = (
+            tool_names
+            if tool_names is not None
+            else [
+                name
+                for name in self.gateway.registry.names()
+                if not self.gateway.registry.require(name).metadata.get("benchmark_fixture", False)
+            ]
+        )
         tools: list[Any] = []
         for name in names:
             spec = self.gateway.registry.require(name)
@@ -112,10 +128,17 @@ class LangGraphGatewayAdapter:
             **(labels or {}),
         }
         decision, result = self.gateway.execute(call, self.context, labels=event_labels)
-        self.steps.append(AgentStep(call.step_id, call, decision, result, phase=phase))
-        return _observation_json(call, decision, result)
+        from ..agents.base import AgentStep
 
-    def tool_node(self, state: dict[str, Any]) -> dict[str, list[Any]]:
+        self.steps.append(AgentStep(call.step_id, call, decision, result, phase=phase))
+        return _observation_json(
+            call,
+            decision,
+            result,
+            sensitive_detector=self.gateway.sensitive_detector,
+        )
+
+    def tool_node(self, state: dict[str, Any]) -> dict[str, Any]:
         """LangGraph node function that handles tool calls from the latest message."""
 
         ToolMessage = _require_tool_message()
@@ -126,21 +149,33 @@ class LangGraphGatewayAdapter:
         tool_messages: list[Any] = []
         source_content = str(state.get("agentguard_source_content", state.get("source_content", "")))
         declared_purpose = str(state.get("agentguard_declared_purpose", state.get("declared_purpose", "")))
+        next_source_parts: list[str] = []
         for tool_call in _extract_tool_calls(messages[-1]):
             name, args, call_id = _normalize_framework_tool_call(tool_call)
             params = dict(args)
-            call_source = str(params.pop("_agentguard_source_content", source_content))
-            call_purpose = str(params.pop("_agentguard_declared_purpose", declared_purpose))
-            content = self.execute(
-                name,
-                params,
-                step_id=str(call_id) if call_id else None,
-                source_content=call_source,
-                declared_purpose=call_purpose,
-                phase="langgraph_tool_node",
-                labels={"tool_call_id": call_id} if call_id else None,
+            content = _bounded_model_observation(
+                self.execute(
+                    name,
+                    params,
+                    step_id=str(call_id) if call_id else None,
+                    # Provenance is application-owned graph state. Tool
+                    # arguments are model-controlled and cannot set detector
+                    # input or trust metadata.
+                    source_content=source_content,
+                    declared_purpose=declared_purpose,
+                    phase="langgraph_tool_node",
+                    labels={"tool_call_id": call_id} if call_id else None,
+                )
             )
-            step_id = self.steps[-1].call.step_id
+            step = self.steps[-1]
+            step_id = step.call.step_id
+            observation_source = _untrusted_observation(
+                step,
+                self.gateway.registry.get(step.call.tool_name),
+                content,
+            )
+            if observation_source:
+                next_source_parts.append(observation_source)
             tool_messages.append(
                 ToolMessage(
                     content=content,
@@ -148,7 +183,17 @@ class LangGraphGatewayAdapter:
                     name=self._agentguard_to_framework.get(self.steps[-1].call.tool_name, name),
                 )
             )
-        return {"messages": tool_messages}
+        # Preserve the exact bounded response made visible to the model.
+        # Detector provenance for the next call must never be a narrower view
+        # of the observation that can steer that call.
+        update: dict[str, Any] = {"messages": tool_messages}
+        # Generic ``MessagesState`` graphs may not declare AgentGuard's
+        # provenance channels.  Only update them when the caller opted in.
+        if "agentguard_source_content" in state or "source_content" in state:
+            update["agentguard_source_content"] = "\n".join(next_source_parts)
+        if "agentguard_declared_purpose" in state or "declared_purpose" in state:
+            update["agentguard_declared_purpose"] = declared_purpose
+        return update
 
     def should_continue(self, state: dict[str, Any], tool_node_name: str = "tools") -> str:
         """Conditional edge helper for a LangGraph ``StateGraph``."""
@@ -173,6 +218,8 @@ class LangGraphGatewayAdapter:
     ) -> AgentRun:
         """Return the adapter's executed LangGraph tool calls as an AgentGuard run trace."""
 
+        from ..agents.base import AgentRun
+
         return AgentRun(
             task=task,
             context=self.context,
@@ -183,7 +230,24 @@ class LangGraphGatewayAdapter:
 
     def _tool_runner(self, tool_name: str) -> Any:
         def run_tool(**kwargs: Any) -> str:
-            return self.execute(tool_name, kwargs, phase="langchain_structured_tool")
+            content = _bounded_model_observation(
+                self.execute(
+                    tool_name,
+                    kwargs,
+                    source_content=self._structured_tool_source_content,
+                    phase="langchain_structured_tool",
+                )
+            )
+            step = self.steps[-1]
+            self._structured_tool_source_content = _merge_structured_provenance(
+                self._structured_tool_source_content,
+                _untrusted_observation(
+                    step,
+                    self.gateway.registry.get(step.call.tool_name),
+                    content,
+                ),
+            )
+            return content
 
         run_tool.__name__ = self._agentguard_to_framework[tool_name]
         return run_tool
@@ -213,12 +277,15 @@ def _require_tool_message() -> Any:
 
 def _args_schema_for(spec: ToolSpec, framework_name: str) -> Any:
     try:
-        from pydantic import BaseModel, Field, create_model
+        from pydantic import BaseModel, ConfigDict, Field, create_model
     except ImportError as exc:  # pragma: no cover - depends on optional dependency state
         raise LangGraphAdapterError(
             "pydantic is required for LangGraph tool schemas. "
             "Install with: python -m pip install -e .[langgraph]"
         ) from exc
+
+    class StrictToolArgs(BaseModel):
+        model_config = ConfigDict(extra="forbid", strict=True)
 
     fields: dict[str, tuple[Any, Any]] = {}
     for param_name, policy in spec.parameters.items():
@@ -231,7 +298,7 @@ def _args_schema_for(spec: ToolSpec, framework_name: str) -> Any:
             Field(default, description=_parameter_description(policy.to_dict())),
         )
     model_name = "".join(part.capitalize() for part in framework_name.split("__")) + "Args"
-    return create_model(model_name, __base__=BaseModel, **fields)
+    return create_model(model_name, __base__=StrictToolArgs, **fields)
 
 
 def _annotation_for_policy(allowed_values: list[Any], kind: str) -> type[Any]:
@@ -263,6 +330,47 @@ def _parameter_description(raw_policy: dict[str, Any]) -> str:
     if raw_policy.get("max_length"):
         parts.append(f"max_length={raw_policy['max_length']}")
     return "; ".join(parts)
+
+
+def _untrusted_observation(
+    step: "AgentStep",
+    spec: ToolSpec | None,
+    model_observation: str,
+) -> str:
+    if not spec or not step.decision.allowed_to_execute or step.result is None:
+        return ""
+    return f"Untrusted model-visible response from {step.call.tool_name}:\n{model_observation}"
+
+
+def _bounded_model_observation(content: str) -> str:
+    """Bound model and provenance views identically while retaining both edges."""
+
+    if len(content) <= _MODEL_OBSERVATION_LIMIT:
+        return content
+    return json.dumps(
+        {
+            "truncated": True,
+            "original_chars": len(content),
+            "head": content[:_MODEL_OBSERVATION_EDGE],
+            "tail": content[-_MODEL_OBSERVATION_EDGE:],
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+    )
+
+
+def _merge_structured_provenance(current: str, new_observation: str) -> str:
+    """Retain prior wrapper provenance across blocks and fail closed on growth."""
+
+    if not new_observation:
+        return current
+    combined = "\n".join(part for part in (current, new_observation) if part)
+    if len(combined) <= _STRUCTURED_PROVENANCE_LIMIT:
+        return combined
+    return (
+        "BEGIN_SYSTEM_OVERRIDE provenance budget exceeded; "
+        "block subsequent tool calls until a new adapter/task is created."
+    )
 
 
 def _tool_description(spec: ToolSpec, original_name: str) -> str:
@@ -300,10 +408,21 @@ def _normalize_framework_tool_call(tool_call: Any) -> tuple[str, dict[str, Any],
     return name, dict(args), call_id
 
 
-def _observation_json(call: ToolCall, decision: GatewayDecision, result: ToolResult | None) -> str:
+def _observation_json(
+    call: ToolCall,
+    decision: GatewayDecision,
+    result: ToolResult | None,
+    *,
+    sensitive_detector: Any,
+) -> str:
+    public_decision, _ = sensitive_detector.redact(decision.to_dict())
     payload = {
         "tool_name": call.tool_name,
-        "decision": decision.to_dict(),
+        # A blocked call can itself contain a credential.  The model-visible
+        # observation must not echo it through sanitized_params or signal
+        # evidence even though the raw decision remains available in memory
+        # for the trusted audit sink.
+        "decision": public_decision,
         "result": result.to_dict() if result else None,
         "ok": bool(result and result.ok),
         "error": None if result and result.ok else decision.reason if result is None else result.error,

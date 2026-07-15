@@ -166,7 +166,7 @@ def _render_dashboard(metrics: dict[str, Any], events: list[dict[str, Any]]) -> 
 <body>
   <header>
     <h1>AgentGuard Dashboard</h1>
-    <p class="muted">Runtime tool-call protection, attack coverage, audit decisions, and evaluation metrics.</p>
+    <p class="muted">Static, display-only report of runtime tool-call protection, attack coverage, audit decisions, and evaluation metrics. Any approval buttons are visual demonstrations and do not change gateway state.</p>
   </header>
   <main>
     <section>
@@ -174,6 +174,7 @@ def _render_dashboard(metrics: dict[str, Any], events: list[dict[str, Any]]) -> 
       {_metrics_grid(metrics)}
       {_metrics_table(metrics)}
     </section>
+{_security_analysis_section(metrics)}
     <section>
       <h2>Audit Timeline</h2>
       <div class="toolbar">
@@ -198,7 +199,8 @@ def _render_dashboard(metrics: dict[str, Any], events: list[dict[str, Any]]) -> 
       button.addEventListener('click', () => {{
         const cell = button.closest('[data-confirm-cell]');
         const action = button.dataset.confirmAction;
-        cell.querySelector('[data-confirm-state]').textContent = action === 'approve' ? 'approved locally' : 'denied locally';
+        cell.querySelector('[data-confirm-state]').textContent =
+          `visual selection: ${{action}} (no gateway action)`;
       }});
     }});
   </script>
@@ -211,12 +213,22 @@ def _metrics_grid(metrics: dict[str, Any]) -> str:
     gateway = metrics.get("gateway", {}).get("metrics", {})
     if not gateway:
         return '<p class="muted">No metrics found. Run evaluation first.</p>'
+    names = (
+        [
+            "task_completion_rate",
+            "unsafe_call_rate",
+            "conditional_prevention_rate",
+            "forbidden_output_leak_rate",
+        ]
+        if "attack_attempt_rate" in gateway
+        else ["task_completion_rate", "unsafe_call_rate", "false_block_rate", "review_rate"]
+    )
     cards = []
-    for name in ["task_completion_rate", "unsafe_call_rate", "false_block_rate", "review_rate"]:
+    for name in names:
         cards.append(
             '<div class="metric">'
             f'<span class="muted">{_label(name)}</span>'
-            f"<strong>{html.escape(str(gateway.get(name, 0)))}</strong>"
+            f"<strong>{html.escape(str(gateway.get(name, 'N/A')))}</strong>"
             "</div>"
         )
     return '<div class="metric-grid">' + "".join(cards) + "</div>"
@@ -225,17 +237,63 @@ def _metrics_grid(metrics: dict[str, Any]) -> str:
 def _metrics_table(metrics: dict[str, Any]) -> str:
     if not metrics:
         return ""
-    header = "<tr><th>Mode</th>" + "".join(f"<th>{html.escape(_label(name))}</th>" for name in METRIC_NAMES) + "</tr>"
+    is_scripted_suite = any(
+        "attack_attempt_rate" in payload.get("metrics", {})
+        for payload in metrics.values()
+    )
+    names = (
+        [
+            "task_completion_rate",
+            "required_tool_success_rate",
+            "attack_attempt_rate",
+            "conditional_block_rate",
+            "conditional_prevention_rate",
+            "unsafe_call_rate",
+            "forbidden_output_leak_rate",
+        ]
+        if is_scripted_suite
+        else METRIC_NAMES
+    )
+    header = "<tr><th>Mode</th>" + "".join(f"<th>{html.escape(_label(name))}</th>" for name in names) + "</tr>"
     rows = []
     for mode, payload in metrics.items():
         values = payload.get("metrics", {})
         rows.append(
             "<tr>"
             f"<td>{html.escape(mode)}</td>"
-            + "".join(f"<td>{html.escape(str(values.get(name, 0)))}</td>" for name in METRIC_NAMES)
+            + "".join(f"<td>{html.escape(str(values.get(name, 'N/A')))}</td>" for name in names)
             + "</tr>"
         )
     return "<table>" + header + "".join(rows) + "</table>"
+
+
+def _security_analysis_section(metrics: dict[str, Any]) -> str:
+    analysis = metrics.get("gateway", {}).get("security_analysis", {})
+    vectors = analysis.get("by_attack_vector", {})
+    if not vectors:
+        return ""
+    header = (
+        "<tr><th>Attack Vector</th><th>Tasks</th><th>Expected</th>"
+        "<th>Attempted</th><th>Prevented</th><th>Allowed</th><th>Leaking Tasks</th></tr>"
+    )
+    rows = []
+    for name, values in sorted(vectors.items()):
+        rows.append(
+            "<tr>"
+            f"<td>{html.escape(str(name))}</td>"
+            f"<td>{html.escape(str(values.get('tasks', 0)))}</td>"
+            f"<td>{html.escape(str(values.get('expected_unsafe_calls', 0)))}</td>"
+            f"<td>{html.escape(str(values.get('unsafe_attempted', 0)))}</td>"
+            f"<td>{html.escape(str(values.get('unsafe_prevented', 0)))}</td>"
+            f"<td>{html.escape(str(values.get('unsafe_allowed', 0)))}</td>"
+            f"<td>{html.escape(str(values.get('tasks_with_forbidden_output', 0)))}</td>"
+            "</tr>"
+        )
+    return (
+        "<section><h2>LLM Security Breakdown</h2>"
+        '<p class="muted">Model attack attempts and execution-boundary outcomes grouped by attack vector.</p>'
+        "<table>" + header + "".join(rows) + "</table></section>"
+    )
 
 
 def _audit_table(events: list[dict[str, Any]]) -> str:
@@ -253,7 +311,7 @@ def _audit_table(events: list[dict[str, Any]]) -> str:
                 '<div data-confirm-cell>'
                 '<button type="button" data-confirm-action="approve">Approve</button> '
                 '<button type="button" data-confirm-action="deny">Deny</button> '
-                '<span class="muted" data-confirm-state>pending</span>'
+                '<span class="muted" data-confirm-state>pending (visual demo only)</span>'
                 '</div>'
             )
         rows.append(

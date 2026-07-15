@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -19,6 +20,10 @@ from .schemas import (
 )
 
 
+_MAX_RETAINED_RESULT_CHARS = 262_144
+_RESULT_EDGE_CHARS = 4_096
+
+
 class SecurityGateway:
     def __init__(
         self,
@@ -32,6 +37,7 @@ class SecurityGateway:
         self.registry = registry
         self.workspace_root = Path(workspace_root or Path.cwd()).resolve()
         self.audit_logger = audit_logger or AuditLogger()
+        self.audit_logger.bind_workspace_root(self.workspace_root)
         self.policy_engine = policy_engine or PolicyEngine(
             registry=registry,
             workspace_root=self.workspace_root,
@@ -60,12 +66,20 @@ class SecurityGateway:
                 source_content=call.source_content,
                 declared_purpose=call.declared_purpose,
             )
-            result = self.registry.execute(executable_call)
+            result = _bounded_tool_result(self.registry.execute(executable_call))
             spec = self.registry.get(call.tool_name)
             if spec and spec.redact_output:
-                redacted_output, counts = self.sensitive_detector.redact(result.output)
+                # Every model-visible result field is an outbound channel.
+                # Sanitize output, errors, metadata, and attacker-controlled
+                # dictionary keys before adapters or audit sinks receive them.
+                redacted_result, counts = self.sensitive_detector.redact(result.to_dict())
                 if counts:
-                    result = ToolResult(ok=result.ok, output=redacted_output, error=result.error, metadata=result.metadata)
+                    result = ToolResult(
+                        ok=result.ok,
+                        output=redacted_result.get("output"),
+                        error=redacted_result.get("error"),
+                        metadata=dict(redacted_result.get("metadata") or {}),
+                    )
                     decision = GatewayDecision(
                         decision=Decision.ALLOW_WITH_REDACTION,
                         risk_level=max(decision.risk_level, RiskLevel.HIGH),
@@ -92,6 +106,8 @@ class SecurityGateway:
         approve: bool,
         labels: dict[str, Any] | None = None,
     ) -> tuple[GatewayDecision, ToolResult | None]:
+        if type(approve) is not bool:
+            raise TypeError("approve must be a boolean")
         labels = labels or {}
         first_decision = self.inspect(call, context)
         if first_decision.decision != Decision.REQUIRE_CONFIRMATION:
@@ -133,4 +149,38 @@ def _with_confirmation(context: SecurityContext) -> SecurityContext:
         confirmed=True,
         session_id=context.session_id,
         trusted_input=context.trusted_input,
+    )
+
+
+def _bounded_tool_result(result: ToolResult) -> ToolResult:
+    """Bound retained/audited result data before any framework can observe it."""
+
+    try:
+        serialized = json.dumps(
+            result.to_dict(),
+            ensure_ascii=False,
+            sort_keys=True,
+            default=str,
+        )
+    except (TypeError, ValueError):
+        serialized = str(result.to_dict())
+    if len(serialized) <= _MAX_RETAINED_RESULT_CHARS:
+        return result
+    return ToolResult(
+        ok=result.ok,
+        output={
+            "truncated": True,
+            "original_chars": len(serialized),
+            "head": serialized[:_RESULT_EDGE_CHARS],
+            "tail": serialized[-_RESULT_EDGE_CHARS:],
+        },
+        error=(
+            None
+            if result.ok
+            else "Tool result exceeded the guarded retention limit"
+        ),
+        metadata={
+            "truncated": True,
+            "original_chars": len(serialized),
+        },
     )

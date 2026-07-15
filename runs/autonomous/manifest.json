@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "run_id": "8a87dcb6fcdc40948920f077b6b0e0f7",
+  "run_type": "scripted_integration",
+  "created_at": "2026-07-13T06:40:23.752634+00:00",
+  "git": {
+    "commit": "ff4da7782adf55861da6a93a35bc0ccfcc3f0aed",
+    "dirty": true
+  },
+  "environment": {
+    "python": "3.12.4",
+    "implementation": "CPython",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "agentguard": "0.1.0",
+    "dependencies": {
+      "langgraph": "1.2.8",
+      "langchain": "0.3.27",
+      "langchain-core": "1.4.8",
+      "pydantic": "2.11.7"
+    }
+  },
+  "inputs": {
+    "tasks": {
+      "path": "data/autonomous_benchmark_tasks.jsonl",
+      "sha256": "9563ab896a6636b45cba01abd9965dcc7eb9993103d16206c99762f05cf5406a"
+    },
+    "tools": {
+      "path": "data/tools.json",
+      "sha256": "779636b310254b1df4dd594aacd4069b5a18c14f730c87ca548a9608fb945934"
+    }
+  },
+  "configuration": {
+    "recursion_limit": 20,
+    "model": {
+      "source": "scripted",
+      "model": "deterministic_fake_messages"
+    }
+  }
+}

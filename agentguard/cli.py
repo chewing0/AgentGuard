@@ -17,6 +17,7 @@ from .audit import AuditLogger, read_audit, summarize_events
 from .attacks import builtin_attack_scenarios
 from .benchmarks import load_tasks
 from .autonomous_evaluation import run_autonomous_benchmark
+from .detectors import SensitiveDataDetector
 from .evaluation import run_evaluation
 from .gateway import SecurityGateway
 from .model_config import load_chat_model_from_config
@@ -26,11 +27,16 @@ from .tools import attach_builtin_handlers
 from .ui import build_dashboard
 
 
-PROJECT_ROOT = Path.cwd()
-DEFAULT_TASKS = PROJECT_ROOT / "data" / "benchmark_tasks.jsonl"
-DEFAULT_AUTONOMOUS_TASKS = PROJECT_ROOT / "data" / "autonomous_benchmark_tasks.jsonl"
+SOURCE_ROOT = Path(__file__).resolve().parents[1]
+# Editable/source installs can locate the repository directly. A regular wheel
+# does not bundle top-level fixtures, so fall back to the caller's repository.
+PROJECT_ROOT = SOURCE_ROOT if (SOURCE_ROOT / "data" / "tools.json").is_file() else Path.cwd().resolve()
+DEFAULT_BENCHMARKS = PROJECT_ROOT / "data" / "benchmarks"
+DEFAULT_TASKS = DEFAULT_BENCHMARKS / "benchmark_tasks.jsonl"
+DEFAULT_AUTONOMOUS_TASKS = DEFAULT_BENCHMARKS / "autonomous_benchmark_tasks.jsonl"
 DEFAULT_TOOLS = PROJECT_ROOT / "data" / "tools.json"
 DEFAULT_RUNS = PROJECT_ROOT / "runs"
+DEFAULT_MANUAL_RUNS = DEFAULT_RUNS / "manual"
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -40,9 +46,10 @@ def main(argv: list[str] | None = None) -> int:
     evaluate = sub.add_parser("evaluate", help="Run the benchmark across protection modes.")
     evaluate.add_argument("--tasks", default=str(DEFAULT_TASKS))
     evaluate.add_argument("--tools", default=str(DEFAULT_TOOLS))
-    evaluate.add_argument("--output", default=str(DEFAULT_RUNS / "latest"))
+    evaluate.add_argument("--output", default=str(DEFAULT_MANUAL_RUNS / "evaluation"))
     evaluate.add_argument("--modes", default="none,prompt_only,rule_guard,gateway")
     evaluate.add_argument("--execute", action="store_true", help="Execute allowed demo tools while evaluating.")
+    evaluate.add_argument("--overwrite", action="store_true", help="Replace generated artifacts in the output directory.")
 
     demo = sub.add_parser("demo", help="Run the gateway on one benchmark task or one raw call.")
     demo.add_argument("--task", help="Benchmark task id to replay through the gateway.")
@@ -50,7 +57,7 @@ def main(argv: list[str] | None = None) -> int:
     demo.add_argument("--context-json", help="Raw JSON security context.")
     demo.add_argument("--tasks", default=str(DEFAULT_TASKS))
     demo.add_argument("--tools", default=str(DEFAULT_TOOLS))
-    demo.add_argument("--audit", default=str(DEFAULT_RUNS / "demo_audit.jsonl"))
+    demo.add_argument("--audit", default=str(DEFAULT_MANUAL_RUNS / "demo_audit.jsonl"))
     demo.add_argument("--confirmed", action="store_true", help="Override context.confirmed for demo replay.")
 
     inspect = sub.add_parser("inspect-audit", help="Summarize a JSONL audit file.")
@@ -66,15 +73,15 @@ def main(argv: list[str] | None = None) -> int:
     agent = sub.add_parser("agent", help="Run the deterministic demo agent on a natural-language task.")
     agent.add_argument("task", nargs="?", default="Generate a security assessment report for AgentGuard.")
     agent.add_argument("--tools", default=str(DEFAULT_TOOLS))
-    agent.add_argument("--audit", default=str(DEFAULT_RUNS / "agent_audit.jsonl"))
-    agent.add_argument("--report-path", default="data/demo_workspace/scratch/agent_report.md")
+    agent.add_argument("--audit", default=str(DEFAULT_MANUAL_RUNS / "demo_agent_audit.jsonl"))
+    agent.add_argument("--report-path", default="runs/manual/reports/demo_agent_report.md")
     agent.add_argument("--untrusted", action="store_true", help="Treat retrieved task context as untrusted.")
     agent.add_argument("--simulate-attack", action="store_true", help="Simulate following a poisoned KB instruction.")
 
     soc_agent = sub.add_parser("security-agent", help="Run the SOC security-operations agent on an alert triage task.")
     soc_agent.add_argument("task", nargs="?", default="Triage alert SOC-104 and produce a containment recommendation.")
     soc_agent.add_argument("--tools", default=str(DEFAULT_TOOLS))
-    soc_agent.add_argument("--audit", default=str(DEFAULT_RUNS / "security_agent_audit.jsonl"))
+    soc_agent.add_argument("--audit", default=str(DEFAULT_MANUAL_RUNS / "security_agent_audit.jsonl"))
     soc_agent.add_argument("--report-path")
     soc_agent.add_argument("--untrusted", action="store_true", help="Treat retrieved task context as untrusted.")
     soc_agent.add_argument("--simulate-attack", action="store_true", help="Simulate a vulnerable follow-up from poisoned KB content.")
@@ -87,29 +94,45 @@ def main(argv: list[str] | None = None) -> int:
         help="JSON object passed as the LangGraph tool-call arguments.",
     )
     langgraph_demo.add_argument("--tools", default=str(DEFAULT_TOOLS))
-    langgraph_demo.add_argument("--audit", default=str(DEFAULT_RUNS / "langgraph_audit.jsonl"))
+    langgraph_demo.add_argument("--audit", default=str(DEFAULT_MANUAL_RUNS / "langgraph_audit.jsonl"))
     langgraph_demo.add_argument("--untrusted", action="store_true", help="Treat tool-call source content as untrusted.")
 
     autonomous = sub.add_parser("autonomous-agent", help="Run a full LangGraph autonomous LLM agent behind AgentGuard.")
     autonomous.add_argument("task", nargs="?", default="Triage SOC-104 using vendor advisory guidance and write a report.")
     autonomous.add_argument("--tools", default=str(DEFAULT_TOOLS))
-    autonomous.add_argument("--audit", default=str(DEFAULT_RUNS / "autonomous_agent_audit.jsonl"))
-    autonomous.add_argument("--report-path", default="data/security_ops_workspace/reports/langgraph_SOC-104_triage.md")
+    autonomous.add_argument("--audit", default=str(DEFAULT_MANUAL_RUNS / "autonomous_agent_audit.jsonl"))
+    autonomous.add_argument("--report-path", default="runs/manual/reports/langgraph_SOC-104_triage.md")
+    autonomous.add_argument(
+        "--workspace-root",
+        default=str(PROJECT_ROOT),
+        help="Workspace exposed to tools. Use an isolated directory for black-box tests.",
+    )
     autonomous_model = autonomous.add_mutually_exclusive_group()
     autonomous_model.add_argument("--model", help="Real LangChain chat model name, for example openai:gpt-4.1-mini.")
     autonomous_model.add_argument("--model-config", help="JSON config for an OpenAI-compatible model.")
     autonomous.add_argument("--simulate-attack", action="store_true", help="Script the LLM to follow poisoned retrieved content.")
     autonomous.add_argument("--untrusted", action="store_true", help="Treat task and retrieved context as untrusted.")
     autonomous.add_argument("--recursion-limit", type=int, default=20)
+    autonomous.add_argument(
+        "--enable-fixture-tool",
+        action="append",
+        default=[],
+        dest="enabled_fixture_tools",
+        help=(
+            "Explicitly expose one benchmark_fixture tool to the model. "
+            "Repeat the flag to enable multiple isolated research fixtures."
+        ),
+    )
 
     autonomous_benchmark = sub.add_parser("autonomous-benchmark", help="Run full autonomous-agent attack benchmark tasks.")
     autonomous_benchmark.add_argument("--tasks", default=str(DEFAULT_AUTONOMOUS_TASKS))
     autonomous_benchmark.add_argument("--tools", default=str(DEFAULT_TOOLS))
-    autonomous_benchmark.add_argument("--output", default=str(DEFAULT_RUNS / "autonomous"))
+    autonomous_benchmark.add_argument("--output", default=str(DEFAULT_MANUAL_RUNS / "autonomous"))
     autonomous_benchmark_model = autonomous_benchmark.add_mutually_exclusive_group()
     autonomous_benchmark_model.add_argument("--model", help="Real LangChain chat model name, for example openai:gpt-4.1-mini.")
     autonomous_benchmark_model.add_argument("--model-config", help="JSON config for an OpenAI-compatible model.")
     autonomous_benchmark.add_argument("--recursion-limit", type=int, default=20)
+    autonomous_benchmark.add_argument("--overwrite", action="store_true", help="Replace generated artifacts in the output directory.")
 
     attacks = sub.add_parser("list-attacks", help="List built-in attack scenarios.")
     attacks.add_argument("--json", action="store_true", help="Print machine-readable scenario JSON.")
@@ -118,13 +141,13 @@ def main(argv: list[str] | None = None) -> int:
     confirm.add_argument("--call-json", help="Raw JSON object with tool_name and params.")
     confirm.add_argument("--context-json", help="Raw JSON security context.")
     confirm.add_argument("--tools", default=str(DEFAULT_TOOLS))
-    confirm.add_argument("--audit", default=str(DEFAULT_RUNS / "confirm_audit.jsonl"))
+    confirm.add_argument("--audit", default=str(DEFAULT_MANUAL_RUNS / "confirm_audit.jsonl"))
     confirm_choice = confirm.add_mutually_exclusive_group(required=True)
     confirm_choice.add_argument("--approve", action="store_true", help="Approve and re-execute with confirmation.")
     confirm_choice.add_argument("--deny", action="store_true", help="Deny the requested high-risk call.")
 
     dashboard = sub.add_parser("dashboard", help="Generate a static HTML dashboard from an evaluation run.")
-    dashboard.add_argument("--run", default=str(DEFAULT_RUNS / "latest"))
+    dashboard.add_argument("--run", default=str(DEFAULT_MANUAL_RUNS / "evaluation"))
     dashboard.add_argument("--output", help="Output HTML path. Defaults to <run>/dashboard.html.")
 
     args = parser.parse_args(argv)
@@ -167,6 +190,7 @@ def _cmd_evaluate(args: argparse.Namespace) -> int:
         output_dir=args.output,
         modes=modes,
         execute_allowed=args.execute,
+        overwrite=args.overwrite,
     )
     print(result.markdown())
     print()
@@ -335,8 +359,13 @@ def _cmd_langgraph_demo(args: argparse.Namespace) -> int:
 
 
 def _cmd_autonomous_agent(args: argparse.Namespace) -> int:
-    registry = attach_builtin_handlers(ToolRegistry.from_json(args.tools), PROJECT_ROOT)
-    gateway = SecurityGateway(registry, PROJECT_ROOT, AuditLogger(args.audit))
+    workspace_root = Path(args.workspace_root).resolve()
+    registry = attach_builtin_handlers(ToolRegistry.from_json(args.tools), workspace_root)
+    gateway = SecurityGateway(
+        registry,
+        workspace_root,
+        AuditLogger(args.audit, workspace_root=workspace_root),
+    )
     context = SecurityContext(
         user_id="langgraph-autonomous-agent",
         role="analyst",
@@ -344,6 +373,10 @@ def _cmd_autonomous_agent(args: argparse.Namespace) -> int:
         trusted_input=not (args.untrusted or args.simulate_attack),
     )
     try:
+        tool_names = _tool_names_for_explicit_fixtures(
+            registry,
+            args.enabled_fixture_tools,
+        )
         if args.model_config:
             model = load_chat_model_from_config(args.model_config)
         elif args.model:
@@ -356,6 +389,7 @@ def _cmd_autonomous_agent(args: argparse.Namespace) -> int:
         agent = LangGraphAutonomousAgent(
             gateway,
             model,
+            tool_names=tool_names,
             task_id="langgraph-autonomous-agent",
             recursion_limit=args.recursion_limit,
         )
@@ -367,7 +401,10 @@ def _cmd_autonomous_agent(args: argparse.Namespace) -> int:
             report_path=args.report_path,
         )
     except Exception as exc:
-        print(f"Autonomous agent failed: {type(exc).__name__}: {exc}", file=sys.stderr)
+        print(
+            f"Autonomous agent failed: {_safe_exception_summary(exc)}",
+            file=sys.stderr,
+        )
         return 1
 
     print(run.markdown())
@@ -389,15 +426,35 @@ def _cmd_autonomous_benchmark(args: argparse.Namespace) -> int:
             model_config_path=args.model_config,
             model_name=args.model,
             recursion_limit=args.recursion_limit,
+            overwrite=args.overwrite,
         )
     except Exception as exc:
-        print(f"Autonomous benchmark failed: {type(exc).__name__}: {exc}", file=sys.stderr)
+        print(
+            f"Autonomous benchmark failed: {_safe_exception_summary(exc)}",
+            file=sys.stderr,
+        )
         return 1
     print(result.markdown())
     print()
     print(f"Wrote metrics to {Path(args.output) / 'metrics.json'}")
     print(f"Wrote report to {Path(args.output) / 'report.md'}")
     return 0
+
+
+def _safe_exception_summary(exc: Exception) -> str:
+    """Describe a failure without persisting provider response bodies.
+
+    Provider exceptions may echo request prompts, tool arguments, or credentials.
+    Their class and numeric HTTP status are sufficient for automated diagnostics;
+    callers that need the provider body should inspect it only in an ephemeral,
+    access-controlled session.
+    """
+
+    name = type(exc).__name__
+    status_code = getattr(exc, "status_code", None)
+    if isinstance(status_code, int) and 100 <= status_code <= 599:
+        return f"{name} (HTTP {status_code})"
+    return name
 
 
 def _cmd_list_attacks(args: argparse.Namespace) -> int:
@@ -459,7 +516,38 @@ def _maybe_confirm(context: SecurityContext, confirmed: bool) -> SecurityContext
     )
 
 
+def _tool_names_for_explicit_fixtures(
+    registry: ToolRegistry,
+    enabled_fixture_tools: list[str],
+) -> list[str] | None:
+    if not enabled_fixture_tools:
+        return None
+    enabled = set(enabled_fixture_tools)
+    unknown = enabled - set(registry.names())
+    if unknown:
+        raise ValueError(f"Unknown fixture tools: {sorted(unknown)}")
+    not_fixtures = sorted(
+        name
+        for name in enabled
+        if not registry.require(name).metadata.get("benchmark_fixture", False)
+    )
+    if not_fixtures:
+        raise ValueError(
+            "--enable-fixture-tool only accepts tools marked benchmark_fixture: "
+            + ", ".join(not_fixtures)
+        )
+    return [
+        name
+        for name in registry.names()
+        if not registry.require(name).metadata.get("benchmark_fixture", False)
+        or name in enabled
+    ]
+
+
 def _print_demo_result(step_id: str, tool_name: str, decision: dict[str, Any], result: dict[str, Any] | None) -> None:
+    decision, _ = SensitiveDataDetector().redact(decision)
+    if result is not None:
+        result, _ = SensitiveDataDetector().redact(result)
     print(f"[{step_id}] {tool_name}: {decision['decision']} ({decision['risk_level']}) - {decision['reason']}")
     if decision.get("signals"):
         for signal in decision["signals"]:
