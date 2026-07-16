@@ -1,6 +1,6 @@
 # LLM 安全实习路线
 
-本文把 AgentGuard 从“可运行的研究原型”整理为一段可验收的 LLM Agent 安全实习。第 0 周是环境准备，之后安排 6 周正式实践，每周约 10–15 小时；时间不足时可完成第 0–3 周，形成一个最小可交付项目。具体安装和运行说明以 [`quickstart.md`](quickstart.md) 为准。
+本文把 AgentGuard 从“可运行的研究原型”整理为一段可验收的 LLM Agent 安全实习。第 0 周是环境准备，之后安排 6 周正式实践，每周约 10–15 小时；时间不足时可完成第 0–3 周，形成一个最小可交付项目。具体安装和运行说明以 [`quickstart.md`](quickstart.md) 为准，文档分工见 [`docs/README.md`](README.md)。
 
 ## 1. 实习目标
 
@@ -46,6 +46,8 @@ python -m agentguard dashboard --run runs/intern-baseline
 
 验收：测试通过，benchmark 标签校验成功，且能够说明 `none`、`prompt_only`、`rule_guard`、`gateway` 四种模式的差别。
 
+目录验收：能够根据 `data/benchmarks/README.md` 找到任务定义，根据 `tests/README.md` 选择测试层次，并说明 `runs/README.md` 中参考快照与本地输出的区别。
+
 请使用独立虚拟环境。LangGraph 1.x 依赖 LangChain Core 1.x；若直接复用装有 LangChain 0.x 的全局环境，`pip check` 会报告版本冲突，且结果不适合作为可复现基线。
 
 ## 4. 第 1 周：威胁建模与攻击复现
@@ -80,7 +82,7 @@ python -m agentguard dashboard --run runs/intern-baseline
 
 ## 6. 第 3 周：评测设计与结果语义
 
-实践任务：在独立分支或任务文件中新增一个攻击场景和一个良性 hard negative。任务应包含明确的 `attack_vector`、`attack_channel`、`attack_goal`、预期工具和 forbidden-output canary。
+实践任务：在 `data/benchmarks/` 中新增一个攻击场景和一个良性 hard negative。任务应包含明确的 `attack_vector`、`attack_channel`、`attack_goal`、预期工具和 forbidden-output canary。若选择进程级黑盒方向，还应在 `blackbox_attack_cases.jsonl` 与 `tests/blackbox/` 中分别补充 case 和独立入口。
 
 先运行 scripted control：
 
@@ -110,8 +112,9 @@ python -m agentguard autonomous-benchmark `
 
 ```powershell
 python -m pip install -e ".[langgraph,openai]"
-$env:AGENTGUARD_REAL_MODEL_CONFIG = "configs/openai-compatible.example.json"
-$env:AGENTGUARD_OPENAI_API_KEY = $env:ANTHROPIC_AUTH_TOKEN
+Copy-Item configs/openai-compatible.example.json configs/intern-provider.local.json
+$env:AGENTGUARD_REAL_MODEL_CONFIG = "configs/intern-provider.local.json"
+$env:AGENTGUARD_OPENAI_API_KEY = "<provider-key>"
 $env:AGENTGUARD_REAL_MODEL_OUTPUT_ROOT = "runs/manual/intern-provider"
 $env:AGENTGUARD_REAL_MODEL_SECURITY_TEST = "1"
 python -m unittest discover -s tests/non_blackbox/provider -t . -p "test_real_model_security_provider_smoke_*.py" -v
