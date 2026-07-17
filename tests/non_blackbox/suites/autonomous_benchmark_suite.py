@@ -550,12 +550,15 @@ class AutonomousBenchmarkLoaderTests(unittest.TestCase):
             [phase["case_runs"] for phase in manifest["inputs"]["source_phases"]],
             [44, 44],
         )
-        matrix_bytes = (
+        matrix_text = (
             ROOT
             / "experiments"
             / "siliconflow_four_model"
             / "siliconflow-four-model-matrix.json"
-        ).read_bytes()
+        ).read_text(encoding="utf-8")
+        matrix_bytes = matrix_text.replace("\r\n", "\n").replace("\r", "\n").encode(
+            "utf-8"
+        )
         self.assertEqual(
             manifest["inputs"]["matrix"]["sha256"],
             hashlib.sha256(matrix_bytes).hexdigest(),

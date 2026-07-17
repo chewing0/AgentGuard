@@ -159,11 +159,12 @@ class OfflineChromiumRenderer:
             profile = root / "profile"
             command = [
                 str(self.executable),
-                "--headless=new",
+                "--headless",
                 "--disable-gpu",
                 "--disable-background-networking",
                 "--disable-component-update",
                 "--disable-default-apps",
+                "--disable-dev-shm-usage",
                 "--disable-extensions",
                 "--disable-sync",
                 "--metrics-recording-only",
@@ -181,7 +182,7 @@ class OfflineChromiumRenderer:
                     command,
                     stdin=subprocess.DEVNULL,
                     stdout=subprocess.PIPE,
-                    stderr=subprocess.DEVNULL,
+                    stderr=subprocess.PIPE,
                     text=True,
                     encoding="utf-8",
                     errors="replace",
@@ -194,7 +195,11 @@ class OfflineChromiumRenderer:
                     f"Chromium rendering failed: {type(exc).__name__}"
                 ) from None
             if completed.returncode != 0:
-                raise BrowserRuntimeError("Chromium rendering returned a non-zero status")
+                stderr_digest = hashlib.sha256(completed.stderr.encode("utf-8")).hexdigest()
+                raise BrowserRuntimeError(
+                    "Chromium rendering returned status "
+                    f"{completed.returncode} (stderr_sha256={stderr_digest})"
+                )
             dom = completed.stdout
         if len(dom) > _MAX_DOM_CHARS:
             raise BrowserRuntimeError("Chromium DOM output exceeded the size limit")
@@ -220,8 +225,17 @@ class OfflineChromiumRenderer:
 
 def find_chromium_executable() -> Path | None:
     configured = os.environ.get("AGENTGUARD_CHROMIUM_PATH")
-    candidates = [configured] if configured else []
-    for name in ("chrome", "msedge", "chromium", "chromium-browser"):
+    runner_chrome = os.environ.get("CHROME_BIN")
+    candidates = [value for value in (configured, runner_chrome) if value]
+    for name in (
+        "google-chrome",
+        "google-chrome-stable",
+        "chrome",
+        "microsoft-edge",
+        "msedge",
+        "chromium",
+        "chromium-browser",
+    ):
         found = shutil.which(name)
         if found:
             candidates.append(found)

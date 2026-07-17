@@ -6,7 +6,7 @@
       "role": "development",
       "format": "labeled_trace",
       "path": "benchmark_tasks.jsonl",
-      "sha256": "5420eb82cce39d04598cee7909dc1629b357e33f03d4e81706425c41609c9692"
+      "sha256": "3c5cf5c642ab95e7c8210d2c6d06d7de0ad4ed5d448a585c1296115d3f6ef07e"
     },
     {
       "name": "tool-trace-held-out-v1",
