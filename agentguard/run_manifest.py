@@ -8,7 +8,7 @@ import shutil
 import subprocess
 import sys
 import uuid
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -71,7 +71,7 @@ def build_run_manifest(
         "schema_version": 1,
         "run_id": uuid.uuid4().hex,
         "run_type": run_type,
-        "created_at": datetime.now(UTC).isoformat(),
+        "created_at": datetime.now(timezone.utc).isoformat(),
         "git": _git_state(root),
         "environment": {
             "python": sys.version.split()[0],

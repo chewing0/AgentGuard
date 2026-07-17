@@ -5,7 +5,7 @@ import hmac
 import json
 import re
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -48,7 +48,7 @@ _REDACTION_MARKER = re.compile(r"^\[REDACTED:[^\]]+\]$")
 
 
 def utc_now_iso() -> str:
-    return datetime.now(UTC).isoformat()
+    return datetime.now(timezone.utc).isoformat()
 
 
 class AuditLogger:
