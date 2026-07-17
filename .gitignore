@@ -14,13 +14,14 @@ env/
 .codex-*/
 
 configs/*.local.json
+experiments/**/*.local.json
 
 # Direct demo reports belong to local runs, not to the source fixtures.
 data/demo_workspace/scratch/agent_report.md
 data/security_ops_workspace/reports/*.md
 !data/security_ops_workspace/reports/.gitkeep
 
-# Keep only the five curated reference snapshots and the runs index in Git.
+# Keep only the six curated reference snapshots and the runs index in Git.
 # All ad-hoc experiment ids, manual traces, and copied task workspaces stay local.
 runs/*
 !runs/README.md
@@ -34,6 +35,8 @@ runs/*
 !runs/provider_glm/**
 !runs/provider_siliconflow/
 !runs/provider_siliconflow/**
+!runs/provider_siliconflow_multimodel/
+!runs/provider_siliconflow_multimodel/**
 runs/**/workspaces/
 
 # Keep credential files ignored even inside an allowlisted reference run.

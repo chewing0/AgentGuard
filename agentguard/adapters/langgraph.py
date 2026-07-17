@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from ..gateway import SecurityGateway
+from ..provenance import DataProvenanceTracker
 from ..schemas import GatewayDecision, SecurityContext, ToolCall, ToolResult, ToolSpec
 
 if TYPE_CHECKING:
@@ -34,6 +35,7 @@ class LangGraphGatewayAdapter:
     context: SecurityContext
     task_id: str = "langgraph"
     labels: dict[str, Any] = field(default_factory=dict)
+    provenance: DataProvenanceTracker = field(default_factory=DataProvenanceTracker)
 
     def __post_init__(self) -> None:
         self.steps: list[AgentStep] = []
@@ -127,16 +129,30 @@ class LangGraphGatewayAdapter:
             **self.labels,
             **(labels or {}),
         }
-        decision, result = self.gateway.execute(call, self.context, labels=event_labels)
-        from ..agents.base import AgentStep
-
-        self.steps.append(AgentStep(call.step_id, call, decision, result, phase=phase))
-        return _observation_json(
+        decision, result = self.gateway.execute(
+            call,
+            self.context,
+            labels=event_labels,
+            provenance=self.provenance,
+        )
+        observation = _observation_json(
             call,
             decision,
             result,
             sensitive_detector=self.gateway.sensitive_detector,
         )
+        from ..agents.base import AgentStep
+
+        self.steps.append(
+            AgentStep(
+                call.step_id,
+                _provenance_safe_call(call, self.provenance),
+                decision,
+                _provenance_safe_result(result, self.provenance),
+                phase=phase,
+            )
+        )
+        return observation
 
     def tool_node(self, state: dict[str, Any]) -> dict[str, Any]:
         """LangGraph node function that handles tool calls from the latest message."""
@@ -190,7 +206,10 @@ class LangGraphGatewayAdapter:
         # Generic ``MessagesState`` graphs may not declare AgentGuard's
         # provenance channels.  Only update them when the caller opted in.
         if "agentguard_source_content" in state or "source_content" in state:
-            update["agentguard_source_content"] = "\n".join(next_source_parts)
+            update["agentguard_source_content"] = _merge_structured_provenance(
+                source_content,
+                "\n".join(next_source_parts),
+            )
         if "agentguard_declared_purpose" in state or "declared_purpose" in state:
             update["agentguard_declared_purpose"] = declared_purpose
         return update
@@ -340,6 +359,38 @@ def _untrusted_observation(
     if not spec or not step.decision.allowed_to_execute or step.result is None:
         return ""
     return f"Untrusted model-visible response from {step.call.tool_name}:\n{model_observation}"
+
+
+def _provenance_safe_call(
+    call: ToolCall,
+    provenance: DataProvenanceTracker,
+) -> ToolCall:
+    params, _ = provenance.redact(call.params)
+    source_content, _ = provenance.redact(call.source_content)
+    declared_purpose, _ = provenance.redact(call.declared_purpose)
+    return ToolCall(
+        tool_name=call.tool_name,
+        params=dict(params),
+        task_id=call.task_id,
+        step_id=call.step_id,
+        source_content=str(source_content),
+        declared_purpose=str(declared_purpose),
+    )
+
+
+def _provenance_safe_result(
+    result: ToolResult | None,
+    provenance: DataProvenanceTracker,
+) -> ToolResult | None:
+    if result is None:
+        return None
+    payload, _ = provenance.redact(result.to_dict())
+    return ToolResult(
+        ok=bool(payload["ok"]),
+        output=payload.get("output"),
+        error=payload.get("error"),
+        metadata=dict(payload.get("metadata") or {}),
+    )
 
 
 def _bounded_model_observation(content: str) -> str:

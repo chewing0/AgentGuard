@@ -304,6 +304,7 @@ class AuditEvent:
     decision: dict[str, Any]
     result: dict[str, Any] | None = None
     labels: dict[str, Any] = field(default_factory=dict)
+    integrity: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -313,4 +314,5 @@ class AuditEvent:
             "decision": self.decision,
             "result": self.result,
             "labels": self.labels,
+            "integrity": self.integrity,
         }

@@ -13,12 +13,14 @@ from .agents import (
     build_scripted_security_ops_model,
     load_chat_model,
 )
-from .audit import AuditLogger, read_audit, summarize_events
+from .audit import AuditLogger, read_audit, summarize_events, verify_audit_chain
 from .attacks import builtin_attack_scenarios
-from .benchmarks import load_tasks
+from .benchmarks import load_tasks, validate_benchmark_splits
 from .autonomous_evaluation import run_autonomous_benchmark
 from .detectors import SensitiveDataDetector
 from .evaluation import run_evaluation
+from .external_evaluation import run_external_detection_evaluation
+from .experiment_matrix import run_blackbox_experiment_matrix
 from .gateway import SecurityGateway
 from .model_config import load_chat_model_from_config
 from .registry import ToolRegistry
@@ -34,6 +36,7 @@ PROJECT_ROOT = SOURCE_ROOT if (SOURCE_ROOT / "data" / "tools.json").is_file() el
 DEFAULT_BENCHMARKS = PROJECT_ROOT / "data" / "benchmarks"
 DEFAULT_TASKS = DEFAULT_BENCHMARKS / "benchmark_tasks.jsonl"
 DEFAULT_AUTONOMOUS_TASKS = DEFAULT_BENCHMARKS / "autonomous_benchmark_tasks.jsonl"
+DEFAULT_BENCHMARK_SPLITS = DEFAULT_BENCHMARKS / "benchmark_splits.json"
 DEFAULT_TOOLS = PROJECT_ROOT / "data" / "tools.json"
 DEFAULT_RUNS = PROJECT_ROOT / "runs"
 DEFAULT_MANUAL_RUNS = DEFAULT_RUNS / "manual"
@@ -69,6 +72,47 @@ def main(argv: list[str] | None = None) -> int:
     validate = sub.add_parser("validate-benchmark", help="Check expected gateway decisions in the benchmark labels.")
     validate.add_argument("--tasks", default=str(DEFAULT_TASKS))
     validate.add_argument("--tools", default=str(DEFAULT_TOOLS))
+
+    validate_splits = sub.add_parser(
+        "validate-splits",
+        help="Verify frozen benchmark hashes and development/held-out isolation.",
+    )
+    validate_splits.add_argument("--registry", default=str(DEFAULT_BENCHMARK_SPLITS))
+
+    external = sub.add_parser(
+        "external-evaluate",
+        help="Evaluate the lexical detector on an external paired corpus.",
+    )
+    external.add_argument("--input", required=True)
+    external.add_argument(
+        "--format",
+        choices=("injecagent", "paired-jsonl"),
+        required=True,
+    )
+    external.add_argument(
+        "--output",
+        default=str(DEFAULT_MANUAL_RUNS / "external-detection"),
+    )
+    external.add_argument("--limit", type=int)
+    external.add_argument("--source-url")
+    external.add_argument("--source-revision")
+    external.add_argument("--overwrite", action="store_true")
+
+    matrix = sub.add_parser(
+        "experiment-matrix",
+        help="Plan or execute a repeated multi-model provider black-box matrix.",
+    )
+    matrix.add_argument("--matrix", required=True)
+    matrix.add_argument(
+        "--output",
+        default=str(DEFAULT_MANUAL_RUNS / "provider-matrix"),
+    )
+    matrix.add_argument(
+        "--execute",
+        action="store_true",
+        help="Perform paid provider calls; without this flag only print the plan.",
+    )
+    matrix.add_argument("--overwrite", action="store_true")
 
     agent = sub.add_parser("agent", help="Run the deterministic demo agent on a natural-language task.")
     agent.add_argument("task", nargs="?", default="Generate a security assessment report for AgentGuard.")
@@ -161,6 +205,12 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_list_tools(args)
     if args.command == "validate-benchmark":
         return _cmd_validate(args)
+    if args.command == "validate-splits":
+        return _cmd_validate_splits(args)
+    if args.command == "external-evaluate":
+        return _cmd_external_evaluate(args)
+    if args.command == "experiment-matrix":
+        return _cmd_experiment_matrix(args)
     if args.command == "agent":
         return _cmd_agent(args)
     if args.command == "security-agent":
@@ -229,8 +279,15 @@ def _cmd_demo(args: argparse.Namespace) -> int:
 
 def _cmd_inspect(args: argparse.Namespace) -> int:
     summary = summarize_events(read_audit(args.path))
-    print(json.dumps(summary.to_dict(), indent=2, ensure_ascii=False))
-    return 0
+    integrity = verify_audit_chain(args.path)
+    print(
+        json.dumps(
+            summary.to_dict() | {"integrity": integrity.to_dict()},
+            indent=2,
+            ensure_ascii=False,
+        )
+    )
+    return 0 if integrity.valid else 1
 
 
 def _cmd_list_tools(args: argparse.Namespace) -> int:
@@ -257,6 +314,68 @@ def _cmd_validate(args: argparse.Namespace) -> int:
         print(json.dumps({"mismatches": mismatches}, indent=2, ensure_ascii=False))
         return 1
     print("Benchmark labels match gateway decisions.")
+    return 0
+
+
+def _cmd_validate_splits(args: argparse.Namespace) -> int:
+    try:
+        result = validate_benchmark_splits(args.registry)
+    except Exception as exc:
+        print(
+            f"Benchmark split validation failed: {_safe_exception_summary(exc)}",
+            file=sys.stderr,
+        )
+        return 1
+    print(json.dumps(result.to_dict(), indent=2, ensure_ascii=False))
+    return 0
+
+
+def _cmd_external_evaluate(args: argparse.Namespace) -> int:
+    try:
+        result = run_external_detection_evaluation(
+            input_path=args.input,
+            source_format=args.format,
+            output_dir=args.output,
+            project_root=PROJECT_ROOT,
+            limit=args.limit,
+            source_url=args.source_url,
+            source_revision=args.source_revision,
+            overwrite=args.overwrite,
+        )
+    except Exception as exc:
+        print(
+            f"External evaluation failed: {_safe_exception_summary(exc)}",
+            file=sys.stderr,
+        )
+        return 1
+    print(result.markdown())
+    print()
+    print(f"Wrote external metrics to {Path(args.output) / 'metrics.json'}")
+    return 0
+
+
+def _cmd_experiment_matrix(args: argparse.Namespace) -> int:
+    try:
+        result = run_blackbox_experiment_matrix(
+            matrix_path=args.matrix,
+            project_root=PROJECT_ROOT,
+            output_dir=args.output,
+            execute=args.execute,
+            overwrite=args.overwrite,
+        )
+    except Exception as exc:
+        print(
+            f"Experiment matrix failed: {_safe_exception_summary(exc)}",
+            file=sys.stderr,
+        )
+        return 1
+    if isinstance(result, dict):
+        print(json.dumps(result, indent=2, ensure_ascii=False))
+        print("Dry run only. Add --execute to perform provider calls.")
+        return 0
+    print(result.markdown())
+    print()
+    print(f"Wrote matrix metrics to {Path(args.output) / 'metrics.json'}")
     return 0
 
 

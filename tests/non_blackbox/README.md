@@ -1,15 +1,15 @@
 # 非黑盒测试目录
 
-这里保存 84 个单元、组件、框架集成、评估和 Provider 门控测试。83 个业务测试各有一个 `test_*.py` 入口文件；另有 1 个目录契约测试保证入口与共享实现严格一一对应。复用的 setup、fixture 和断言实现集中在 `suites/`，避免为一测试一文件复制大量代码。
+这里保存 103 个单元、组件、框架集成、评估和 Provider 门控测试。102 个业务测试各有一个 `test_*.py` 入口文件；另有 1 个目录契约测试保证入口与共享实现严格一一对应。复用的 setup、fixture 和断言实现集中在 `suites/`，避免为一测试一文件复制大量代码。
 
 | 目录 | 数量 | 内容 |
 |---|---:|---|
-| `core/` | 32 | Gateway、审计、敏感数据、模型配置和目录契约 |
-| `agent/` | 15 | Demo/SOC Agent、LangGraph adapter 和自主 Agent loop |
-| `evaluation/` | 23 | Benchmark loader、评分、指标和 run manifest |
+| `core/` | 41 | Gateway、审计完整性/回放、持久审批、沙箱、MCP、跨会话记忆、浏览器多通道守卫、provenance、模型配置和目录契约 |
+| `agent/` | 17 | Demo/SOC Agent、LangGraph adapter、跨步骤 provenance 和最终输出防护 |
+| `evaluation/` | 31 | Benchmark loader、冻结 split、外部语料适配、多模型矩阵、Provider 预检、丰富指标和 run manifest |
 | `cli/` | 3 | CLI 失败状态和异常信息脱敏 |
 | `provider/` | 11 | 3 个真实模型 Agent gate 和 8 个 Provider 配置/错误处理测试 |
-| **合计** | **84** | 不包含 `tests/blackbox/` 的 15 个进程级黑盒测试 |
+| **合计** | **103** | 不包含 `tests/blackbox/` 的 15 个进程级黑盒测试 |
 
 运行全部非黑盒测试：
 

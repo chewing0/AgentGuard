@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import ast
 import re
 import sqlite3
 from pathlib import Path
@@ -8,6 +7,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 from agentguard.registry import ToolRegistry
+from agentguard.sandbox_runtime import IsolatedExpressionSandbox
 from agentguard.schemas import ToolResult
 
 
@@ -21,6 +21,7 @@ class DemoToolEnvironment:
         self.workspace_root = Path(workspace_root).resolve()
         self.demo_root = self.workspace_root / "data" / "demo_workspace"
         self.security_ops_root = self.workspace_root / "data" / "security_ops_workspace"
+        self.expression_sandbox = IsolatedExpressionSandbox()
         self.demo_root.mkdir(parents=True, exist_ok=True)
         self.security_ops_root.mkdir(parents=True, exist_ok=True)
 
@@ -103,10 +104,14 @@ class DemoToolEnvironment:
     def code_python(self, params: dict[str, Any]) -> ToolResult:
         code = str(params.get("code", ""))
         try:
-            output = _safe_eval_python_expression(code)
-            return ToolResult(ok=True, output={"result": output})
+            output = self.expression_sandbox.execute(code)
+            return ToolResult(
+                ok=True,
+                output={"result": output},
+                metadata={"sandbox": "isolated_subprocess", "timeout_ms": 1000},
+            )
         except Exception as exc:
-            return ToolResult(ok=False, error=f"{type(exc).__name__}: {exc}")
+            return ToolResult(ok=False, error=f"Sandbox rejected expression: {type(exc).__name__}")
 
     def api_get(self, params: dict[str, Any]) -> ToolResult:
         url = str(params.get("url", ""))
@@ -302,50 +307,6 @@ def attach_builtin_handlers(registry: ToolRegistry, workspace_root: str | Path) 
 
 def _looks_like_select(query: str) -> bool:
     return query.strip().lower().startswith(("select ", "with "))
-
-
-def _safe_eval_python_expression(code: str) -> Any:
-    tree = ast.parse(code, mode="eval")
-    allowed_nodes = (
-        ast.Expression,
-        ast.BinOp,
-        ast.UnaryOp,
-        ast.BoolOp,
-        ast.Compare,
-        ast.Call,
-        ast.Name,
-        ast.Load,
-        ast.Constant,
-        ast.List,
-        ast.Tuple,
-        ast.Dict,
-        ast.Set,
-        ast.Add,
-        ast.Sub,
-        ast.Mult,
-        ast.Div,
-        ast.Mod,
-        ast.Pow,
-        ast.FloorDiv,
-        ast.USub,
-        ast.UAdd,
-        ast.And,
-        ast.Or,
-        ast.Eq,
-        ast.NotEq,
-        ast.Lt,
-        ast.LtE,
-        ast.Gt,
-        ast.GtE,
-    )
-    allowed_functions = {"abs": abs, "min": min, "max": max, "sum": sum, "len": len, "round": round}
-    for node in ast.walk(tree):
-        if not isinstance(node, allowed_nodes):
-            raise ValueError(f"Unsupported Python syntax: {type(node).__name__}")
-        if isinstance(node, ast.Call):
-            if not isinstance(node.func, ast.Name) or node.func.id not in allowed_functions:
-                raise ValueError("Only simple allowlisted functions are available")
-    return eval(compile(tree, "<agentguard-safe-eval>", "eval"), {"__builtins__": {}}, allowed_functions)
 
 
 def _tokens(text: str) -> set[str]:

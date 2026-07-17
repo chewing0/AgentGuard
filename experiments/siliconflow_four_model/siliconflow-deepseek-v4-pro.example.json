@@ -1,0 +1,9 @@
+{
+  "provider": "anthropic",
+  "model": "deepseek-ai/DeepSeek-V4-Pro",
+  "base_url": "https://api.siliconflow.cn",
+  "api_key_env": "ANTHROPIC_AUTH_TOKEN",
+  "timeout_ms": 600000,
+  "temperature": 0,
+  "max_retries": 1
+}

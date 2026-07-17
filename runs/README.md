@@ -11,6 +11,7 @@
 | `llm_security_scripted/` | 15-task LLM 安全研究集的 scripted control | 验证攻击路径与评分管线 |
 | `provider_glm/` | GLM-5.1 的一次小规模 pilot | `n=1` smoke test，不可外推 |
 | `provider_siliconflow/` | 2026-07-14 GLM-5.1 真实 Agent smoke/frontier | E2E、smoke 通过；frontier 4/5，编码载荷触发 1 个输出泄漏 |
+| `provider_siliconflow_multimodel/` | 2026-07-17 四模型 × 2 次 × 11-case Provider 黑盒矩阵 | 88 次任务级结果；2 次无效，旧版失败标签不作安全/效用过度归因 |
 
 每个标准 run 使用相同结构：
 
@@ -18,13 +19,14 @@
 <run-id>/
   manifest.json    输入 hash、配置、环境和 Git 状态
   metrics.json     机器可读指标
+  case_results.jsonl 可选逐 case 脱敏结果
   report.md        中文/英文实验摘要
   dashboard.html   可选静态结果页面，由 dashboard 命令生成
   audit/           每个模式或任务的 JSONL 审计日志
   workspaces/      每任务隔离副本，本地生成且不提交
 ```
 
-参考快照不会随每次代码改动自动更新。复现时以各目录 `manifest.json` 中的输入 SHA-256、模型配置和 Git 状态为准；若 hash 与当前文件不同，应创建新 run，而不是把历史指标当作当前代码的结果。`provider_glm/` 是历史 pilot；`provider_siliconflow/` 来自 dirty worktree，必须连同 manifest 的 commit、dirty 标志和输入 hash 一起解释。
+参考快照不会随每次代码改动自动更新。复现时以各目录 `manifest.json` 中的输入 SHA-256、模型配置和 Git 状态为准；若 hash 与当前文件不同，应创建新 run，而不是把历史指标当作当前代码的结果。`provider_glm/` 是历史 pilot；`provider_siliconflow/` 与 `provider_siliconflow_multimodel/` 来自 dirty worktree，必须连同 manifest 的 commit、dirty 标志和输入 hash 一起解释。四模型快照因 Provider 限流/可用性分两阶段执行，合并 manifest 同时固定两个源阶段的 manifest 与逐 case 结果哈希。
 
 部分历史 manifest 生成于 benchmark 目录整理之前，可能记录 `data/<name>.jsonl`；当前对应定义位于 `data/benchmarks/<name>.jsonl`。历史 manifest 应保持原样，不要为了新目录结构改写既有实验元数据。
 
@@ -32,8 +34,8 @@
 
 - 裸 `evaluate`、`autonomous-benchmark`、dashboard、单次 demo 和 agent 默认都使用 `runs/manual/`，不会覆盖参考快照。
 - 自定义实验使用 `runs/<experiment-id>/`，例如 `runs/intern-baseline/`。
-- 除上表五个参考快照和本文件外，`runs/` 下的新内容默认被 Git 忽略，避免把临时结果混入提交。
+- 除上表六个参考快照和本文件外，`runs/` 下的新内容默认被 Git 忽略，避免把临时结果混入提交。
 - 复用已有输出目录必须显式传入 `--overwrite`；需要保留证据时应使用新的 experiment id。
-- 不要把不同任务集、模型、provider 或防护配置的结果合并到同一目录，也不要直接比较 scripted control 与 provider-backed 结果。
+- 不要把不同任务集、provider 或防护配置的结果混入同一统计分母，也不要直接比较 scripted control 与 provider-backed 结果。预先声明的多模型矩阵可以合并，但必须使用相同 case 集与协议，并保留每个源阶段的哈希和逐模型分层指标。
 - 真实模型 unittest 可设置 `AGENTGUARD_REAL_MODEL_OUTPUT_ROOT=runs/manual/real-model`；smoke 与 frontier 会分别写入其下的 `smoke/` 和 `frontier/`，CI 也使用这一结构上传脱敏证据。
 - Provider 返回 401、402、429 或 5xx 时，本轮属于失败，不应生成或提交“通过”快照；修复凭据、账号权益或限流后使用新的 experiment id 重跑。

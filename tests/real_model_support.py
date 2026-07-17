@@ -10,7 +10,11 @@ from agentguard.model_config import load_model_config
 
 
 ROOT = Path(__file__).resolve().parents[1]
-_OPTIONAL_MODULES = ("langgraph", "langchain_core", "langchain_openai", "openai")
+_BASE_OPTIONAL_MODULES = ("langgraph", "langchain_core")
+_PROVIDER_OPTIONAL_MODULES = {
+    "openai": ("langchain_openai",),
+    "anthropic": ("langchain_anthropic", "anthropic"),
+}
 _T = TypeVar("_T")
 
 
@@ -35,19 +39,24 @@ def real_model_enabled(gate_env: str) -> bool:
     if os.getenv(gate_env) != "1":
         return False
 
-    missing_modules = [
-        name for name in _OPTIONAL_MODULES if importlib.util.find_spec(name) is None
-    ]
-    if missing_modules:
-        raise RuntimeError(
-            f"{gate_env}=1 but real-model dependencies are missing: "
-            f"{', '.join(missing_modules)}"
-        )
-
     config_path = real_model_config_path()
     try:
-        load_model_config(config_path).resolve_api_key()
+        config = load_model_config(config_path)
+        provider_modules = _PROVIDER_OPTIONAL_MODULES.get(config.provider, ())
+        missing_modules = [
+            name
+            for name in (*_BASE_OPTIONAL_MODULES, *provider_modules)
+            if importlib.util.find_spec(name) is None
+        ]
+        if missing_modules:
+            raise RuntimeError(
+                f"{gate_env}=1 but real-model dependencies are missing: "
+                f"{', '.join(missing_modules)}"
+            )
+        config.resolve_api_key()
     except (OSError, ValueError, RuntimeError) as exc:
+        if isinstance(exc, RuntimeError) and "dependencies are missing" in str(exc):
+            raise
         raise RuntimeError(
             f"{gate_env}=1 but the real-model config or API key could not be resolved "
             f"from {config_path}: {type(exc).__name__}"

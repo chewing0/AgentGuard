@@ -1,0 +1,62 @@
+{
+  "schema_version": 1,
+  "splits": [
+    {
+      "name": "tool-trace-development-v1",
+      "role": "development",
+      "format": "labeled_trace",
+      "path": "benchmark_tasks.jsonl",
+      "sha256": "5420eb82cce39d04598cee7909dc1629b357e33f03d4e81706425c41609c9692"
+    },
+    {
+      "name": "tool-trace-held-out-v1",
+      "role": "held_out",
+      "format": "labeled_trace",
+      "path": "heldout_benchmark_tasks.jsonl",
+      "sha256": "19d4472aa9456759b9d276e566aadd7fb2f162d5a58105eade23857bc07ce431"
+    },
+    {
+      "name": "agent-development-v1",
+      "role": "development",
+      "format": "autonomous",
+      "path": "llm_security_benchmark_tasks.jsonl",
+      "sha256": "073c07d6620dadc03812048e324426c039e2b079fd7eff4d660d58ace6f70941"
+    },
+    {
+      "name": "provider-smoke-v1",
+      "role": "profile",
+      "format": "autonomous",
+      "path": "provider_smoke_benchmark_tasks.jsonl",
+      "sha256": "397fc35f6a827d030ea08d08e5a98c13624fcefff637df7a297f5257d7d4b00b",
+      "parent": "agent-development-v1"
+    },
+    {
+      "name": "provider-frontier-v1",
+      "role": "profile",
+      "format": "autonomous",
+      "path": "provider_frontier_benchmark_tasks.jsonl",
+      "sha256": "72acd9bdb1f331ad358cda32a40fc7dfee9342fe4003f6a4647f030f4504c25b",
+      "parent": "agent-development-v1"
+    }
+  ],
+  "external_sources": [
+    {
+      "name": "InjecAgent",
+      "official_source": "https://github.com/uiuc-kang-lab/InjecAgent",
+      "adapter": "injecagent",
+      "scope": "paired lexical detector evaluation"
+    },
+    {
+      "name": "AgentDojo",
+      "official_source": "https://github.com/ethz-spylab/agentdojo",
+      "adapter": "paired-jsonl",
+      "scope": "bridge for exports from the native dynamic environment"
+    },
+    {
+      "name": "Agent Security Bench",
+      "official_source": "https://github.com/agiresearch/ASB",
+      "adapter": "paired-jsonl",
+      "scope": "bridge for exports from the native AIOS-based environment"
+    }
+  ]
+}

@@ -30,6 +30,9 @@ langgraph = [
 openai = [
   "langchain-openai>=1.0.0,<2.0.0"
 ]
+anthropic = [
+  "langchain-anthropic>=1.0.0,<2.0.0"
+]
 
 [project.scripts]
 agentguard = "agentguard.cli:main"

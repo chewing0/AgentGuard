@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Annotated, Any, Callable, TypedDict
 
 from ..adapters import LangGraphAdapterError, LangGraphGatewayAdapter
+from ..defense import OutputSafetyGuard
 from ..gateway import SecurityGateway
 from ..schemas import SecurityContext
 from .base import AgentRun
@@ -118,6 +119,8 @@ class LangGraphAutonomousAgent:
     labels: dict[str, Any] = field(default_factory=dict)
     memory: AgentMemory | None = None
     retry_policy: RetryPolicy = field(default_factory=RetryPolicy)
+    forbidden_output_patterns: list[str] = field(default_factory=list)
+    output_guard: OutputSafetyGuard | None = None
 
     def run(
         self,
@@ -151,7 +154,17 @@ class LangGraphAutonomousAgent:
             },
             config={"recursion_limit": self.recursion_limit},
         )
-        final_message = _final_message_text(state.get("messages", []))
+        raw_final_message = _final_message_text(state.get("messages", []))
+        output_guard = self.output_guard or OutputSafetyGuard(
+            sensitive_detector=self.gateway.sensitive_detector,
+            forbidden_patterns=self.forbidden_output_patterns,
+        )
+        output_safety = output_guard.inspect(
+            raw_final_message,
+            provenance=adapter.provenance,
+        )
+        final_message = output_safety.text
+        model_usage = _aggregate_message_usage(state.get("messages", []))
         memory.record_steps(adapter.steps)
         task_state.status = "completed" if final_message or adapter.steps else "stopped"
         inferred_report = report_path or _infer_report_path(adapter)
@@ -163,10 +176,40 @@ class LangGraphAutonomousAgent:
                 "agent": "langgraph_autonomous",
                 "framework": "langgraph",
                 "final_message": final_message,
+                "output_safety": output_safety.to_dict(),
+                "model_usage": model_usage,
                 "memory": memory.to_dict(),
                 "task_state": task_state.to_dict(),
             },
         )
+
+
+def _aggregate_message_usage(messages: list[Any]) -> dict[str, int]:
+    totals = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+    for message in messages:
+        usage = getattr(message, "usage_metadata", None)
+        if not isinstance(usage, dict):
+            response_metadata = getattr(message, "response_metadata", None)
+            token_usage = (
+                response_metadata.get("token_usage")
+                if isinstance(response_metadata, dict)
+                else None
+            )
+            if isinstance(token_usage, dict):
+                usage = {
+                    "input_tokens": token_usage.get("prompt_tokens", 0),
+                    "output_tokens": token_usage.get("completion_tokens", 0),
+                    "total_tokens": token_usage.get("total_tokens", 0),
+                }
+        if not isinstance(usage, dict):
+            continue
+        for key in totals:
+            value = usage.get(key, 0)
+            if type(value) is int and value >= 0:
+                totals[key] += value
+    if totals["total_tokens"] == 0:
+        totals["total_tokens"] = totals["input_tokens"] + totals["output_tokens"]
+    return totals
 
 
 def build_scripted_security_ops_model(
@@ -342,7 +385,14 @@ def _build_react_graph(
         task_state.status = "replanning" if revisions else "running"
         if revisions:
             SystemMessage = _require_system_message()
-            messages = [*messages, SystemMessage(content=memory.prompt_summary(task_state))]
+            summary = memory.prompt_summary(task_state)
+            if messages and isinstance(messages[0], SystemMessage):
+                messages = [
+                    SystemMessage(content=f"{messages[0].content}\n\n{summary}"),
+                    *messages[1:],
+                ]
+            else:
+                messages = [SystemMessage(content=summary), *messages]
         response = bound_model.invoke(messages)
         return {"messages": [response]}
 

@@ -53,12 +53,20 @@ def build_run_manifest(
     run_type: str,
     project_root: str | Path,
     tasks_path: str | Path,
-    tools_path: str | Path,
+    tools_path: str | Path | None,
     configuration: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     root = Path(project_root).resolve()
     tasks = Path(tasks_path).resolve()
-    tools = Path(tools_path).resolve()
+    tools = Path(tools_path).resolve() if tools_path is not None else None
+    inputs = {
+        "tasks": {"path": _display_path(tasks, root), "sha256": _sha256_file(tasks)},
+    }
+    if tools is not None:
+        inputs["tools"] = {
+            "path": _display_path(tools, root),
+            "sha256": _sha256_file(tools),
+        }
     return {
         "schema_version": 1,
         "run_id": uuid.uuid4().hex,
@@ -75,10 +83,7 @@ def build_run_manifest(
                 for name in ("langgraph", "langchain", "langchain-core", "pydantic")
             },
         },
-        "inputs": {
-            "tasks": {"path": _display_path(tasks, root), "sha256": _sha256_file(tasks)},
-            "tools": {"path": _display_path(tools, root), "sha256": _sha256_file(tools)},
-        },
+        "inputs": inputs,
         "configuration": configuration or {},
     }
 

@@ -1,7 +1,7 @@
 {
-  "provider": "openai",
+  "provider": "anthropic",
   "model": "Pro/zai-org/GLM-5.1",
-  "base_url": "https://api.siliconflow.cn/v1",
+  "base_url": "https://api.siliconflow.cn",
   "api_key_env": "ANTHROPIC_AUTH_TOKEN",
   "timeout_ms": 600000,
   "temperature": 0,

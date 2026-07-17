@@ -1,0 +1,143 @@
+{
+  "schema_version": 1,
+  "run_id": "siliconflow-four-model-two-phase-20260717",
+  "run_type": "provider_blackbox_matrix_merged_reference",
+  "created_at": "2026-07-17T11:22:27.939945+00:00",
+  "git": {
+    "commit": "e028f768976b32c3142992e4ffc16ee04b36af8f",
+    "dirty": true
+  },
+  "environment": {
+    "python": "3.12.4",
+    "implementation": "CPython",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "agentguard": "0.1.0",
+    "dependencies": {
+      "langgraph": "1.2.8",
+      "langchain": "0.3.27",
+      "langchain-core": "1.4.8",
+      "pydantic": "2.11.7"
+    }
+  },
+  "inputs": {
+    "matrix": {
+      "path": "configs/siliconflow-four-model-matrix.json",
+      "sha256": "35d9ac07502151486812eb52690221d42242e291dd5def25c253103e178491b8"
+    },
+    "source_phases": [
+      {
+        "phase_id": "glm-deepseek",
+        "run_id": "e932223667c3429b8a26f3cbe56653f9",
+        "manifest_created_at": "2026-07-17T09:13:49.924250+00:00",
+        "manifest_sha256": "ce287775f85919f16015e8d00006d803b84b2ee26cc3abaeae46f20a3a5414a8",
+        "case_results_sha256": "7abc58034136aa0c33be661a063fcfc89a02e5a220428c1eca39993e892c04b6",
+        "matrix_config_sha256": "195839be98e1936e312ffd0071e9c5215da2cd505c94efe6ada97590c49d65f0",
+        "case_runs": 44
+      },
+      {
+        "phase_id": "kimi-minimax",
+        "run_id": "d4b4ec7c45eb4e569633ad3a50621343",
+        "manifest_created_at": "2026-07-17T09:56:23.152773+00:00",
+        "manifest_sha256": "4f7df00f7c333b74b38bbb17906226bf09a6a059f3082a4ad0749217650b6718",
+        "case_results_sha256": "b39a97ed475ce4a2548f81f453b40c4b58e298e3e6e0a815d37bb2cb6ff9be9c",
+        "matrix_config_sha256": "6bc12cc67758c638e5545e35625e3e14de21d333aa7f4b9fa0b267f203deda42",
+        "case_runs": 44
+      }
+    ]
+  },
+  "configuration": {
+    "models": [
+      {
+        "model_id": "siliconflow-glm-5.1",
+        "config_file": "siliconflow-glm-5.1.example.json",
+        "config_sha256": "fe42690d584b7fb5d139c20729b7fca4c232823e48157d77f75b3283a5da4193",
+        "config": {
+          "provider": "anthropic",
+          "model": "Pro/zai-org/GLM-5.1",
+          "base_url": "https://api.siliconflow.cn",
+          "api_key_env": "ANTHROPIC_AUTH_TOKEN",
+          "timeout_ms": 600000,
+          "temperature": 0.0,
+          "max_retries": 1,
+          "input_cost_per_million_usd": null,
+          "output_cost_per_million_usd": null,
+          "extra_keys": []
+        }
+      },
+      {
+        "model_id": "siliconflow-kimi-k2.6",
+        "config_file": "siliconflow-kimi-k2.6.example.json",
+        "config_sha256": "9346ec2617e2ec986fcc296e8b89e5d4e5cf6763b4115dc1a0b0e08989b577d1",
+        "config": {
+          "provider": "anthropic",
+          "model": "Pro/moonshotai/Kimi-K2.6",
+          "base_url": "https://api.siliconflow.cn",
+          "api_key_env": "ANTHROPIC_AUTH_TOKEN",
+          "timeout_ms": 600000,
+          "temperature": 0.0,
+          "max_retries": 1,
+          "input_cost_per_million_usd": null,
+          "output_cost_per_million_usd": null,
+          "extra_keys": []
+        }
+      },
+      {
+        "model_id": "siliconflow-minimax-m2.5",
+        "config_file": "siliconflow-minimax-m2.5.example.json",
+        "config_sha256": "cb5305998e8816618454208c5d21ad8f9387ec59835e063e14798b8a9b28e81f",
+        "config": {
+          "provider": "anthropic",
+          "model": "MiniMaxAI/MiniMax-M2.5",
+          "base_url": "https://api.siliconflow.cn",
+          "api_key_env": "ANTHROPIC_AUTH_TOKEN",
+          "timeout_ms": 600000,
+          "temperature": 0.0,
+          "max_retries": 1,
+          "input_cost_per_million_usd": null,
+          "output_cost_per_million_usd": null,
+          "extra_keys": []
+        }
+      },
+      {
+        "model_id": "siliconflow-deepseek-v4-pro",
+        "config_file": "siliconflow-deepseek-v4-pro.example.json",
+        "config_sha256": "bf2fd2cba825c77e7204ed0dd6127ce9bf9bfce5601ee341ff9736d020575d5b",
+        "config": {
+          "provider": "anthropic",
+          "model": "deepseek-ai/DeepSeek-V4-Pro",
+          "base_url": "https://api.siliconflow.cn",
+          "api_key_env": "ANTHROPIC_AUTH_TOKEN",
+          "timeout_ms": 600000,
+          "temperature": 0.0,
+          "max_retries": 1,
+          "input_cost_per_million_usd": null,
+          "output_cost_per_million_usd": null,
+          "extra_keys": []
+        }
+      }
+    ],
+    "repetitions": 2,
+    "case_modules": [
+      "tests.blackbox.test_01_direct_prompt_injection",
+      "tests.blackbox.test_02_indirect_prompt_injection",
+      "tests.blackbox.test_03_encoded_exfiltration",
+      "tests.blackbox.test_04_destructive_delete",
+      "tests.blackbox.test_05_agent_message_infection",
+      "tests.blackbox.test_06_adaptive_prompt_injection",
+      "tests.blackbox.test_09_multilingual_prompt_injection",
+      "tests.blackbox.test_10_benign_security_hard_negative",
+      "tests.blackbox.test_11_sleeper_memory_poisoning",
+      "tests.blackbox.test_12_mcp_metadata_poisoning",
+      "tests.blackbox.test_13_authorized_read_cross_tool_exfiltration"
+    ],
+    "execution_mode": "two_phase_same_code_and_case_set",
+    "provider_output_retention": "discarded",
+    "result_semantics": {
+      "pass_rate_name": "whole_case_success_rate",
+      "denominator": "passed + failed; invalid provider/runtime/timeout rows excluded",
+      "utility_failures_are_failed_cases": true,
+      "provider_output_retention": "discarded",
+      "legacy_outcome_normalization": "Phase glm-deepseek used an older generic 'security_failure' label. The merged snapshot renames it to 'legacy_assertion_failure' and does not infer whether the assertion represented safety or utility."
+    }
+  }
+}

@@ -1,49 +1,23 @@
-# AgentGuard 简历展示版
+# AgentGuard：LLM Agent 安全评测与运行时防御
 
-## 一句话价值定位
+**项目定位：** 研究性实习项目｜**技术栈：** Python、LangGraph/LangChain、SQLite、MCP、Chromium、GitHub Actions
 
-围绕 prompt injection、tool-result poisoning、权限提升与数据外发研究 tool-using LLM Agent 安全，并实现工具执行边界防御；内部确定性回归集允许 18/18 个 safe calls，并阻止 26/26 个 unsafe calls 立即执行。
+## 主要内容
 
-## 可直接放简历的描述
+面向可调用文件、知识库、API 和代码工具的 LLM Agent，研究 prompt injection、工具误用、敏感数据外泄和持久化投毒风险；在 Agent 与工具后端之间构建可审计的执行边界，在副作用发生前完成授权、参数校验、风险检测、人工确认与阻断。
 
-- 研究 execution-boundary mediation 对 LLM Agent 工具误用的防护效果；构建组合式运行时网关，在 `file`、`db`、`api`、`kb.search`、`threat.lookup`、`code.python` 等工具执行前统一实施 role/scope 授权、参数约束、提示注入检测和高风险确认。
-- 实现基于正则的 outbound secret-pattern 扫描与输出脱敏，并通过 JSONL 记录策略信号和决策；该实现不声称具备端到端数据流或 taint tracking。
-- 构建 35-task、44-step 的内部确定性 labeled regression set；允许 18/18 个 safe calls，并阻止 26/26 个 unsafe calls 立即执行，其中 25 个 `block`、1 个 `require_confirmation`。
-- 构建 15-task LLM security suite，按 attack vector、attack channel 和 attack goal 标注 13 类攻击，覆盖直接/间接注入、tool-result poisoning、编码外发、权限提升、多语言、多轮、持久记忆休眠投毒、MCP 工具元数据投毒和 Agent 间提示感染，并分别统计模型未尝试、网关阻断、人工复核与危险执行。
-- 实现可插拔 LangGraph adapter 和 6-scenario scripted integration suite，回归 tool observation、拦截结果回传和后续安全步骤；不将 scripted ChatModel 结果表述为 provider-backed attack evidence。
-- 建立 99 项自动化测试、GitHub Actions CI、benchmark label 校验、按威胁维度输出的安全报告和 JSONL 审计；进程级黑盒层包含 4 个确定性入口与 11 个 provider-backed 入口，并与良性 E2E、smoke、frontier 分别门控。
+## 主要工作
 
-简历标题建议使用 **Research Intern — LLM Agent Security**，项目副标题使用 **AgentGuard: Runtime Policy Enforcement for Tool-Using LLM Agents**。在组织、日期和导师信息旁明确个人负责的模块；只有确实由本人完成的设计、实现和实验才使用“设计/实现/构建”等动词。
+- 设计统一安全网关，覆盖角色与 scope 授权、工具参数约束、路径/域名白名单、高风险审批及 fail-closed 执行策略。
+- 实现提示注入和敏感信息检测、动态 canary/凭据跨步骤追踪、输出脱敏与最终回答防护，并通过哈希链/HMAC 审计支持结果追溯和无执行策略回放。
+- 接入 LangGraph Agent loop、MCP stdio、SQLite 跨会话记忆、禁网 Chromium 多通道 observation 守卫和受限表达式子进程沙箱。
+- 构建分层评测体系，包括确定性策略回归、冻结留出集、scripted Agent 集成、15 项进程级黑盒测试、真实 Provider gate、外部语料适配器和多模型重复实验矩阵。
 
-## 贡献边界与措辞
+## 成果
 
-当前最准确的定位是 **LLM agent security evaluation and runtime enforcement research prototype**。贡献在于构建 LLM 攻击任务与结果语义，并把授权、参数约束、正则检测、人工确认和审计组合到统一工具执行边界。避免使用“首次提出 tool firewall”“消除 Agent 攻击”“SOTA”“生产级”或“已证明真实模型鲁棒”等表述。
+- 在 35-task、44-step 内部回归中允许 **18/18** 个安全调用；**26/26** 个危险调用均未立即执行，其中 25 个被阻断、1 个进入人工确认。
+- 在 15-task LLM 安全 scripted control 中覆盖 13 类攻击，14 个预定危险动作全部进入防护链路，结果为 **13 个阻断、1 个复核、0 个执行、0 个输出泄漏**。
+- 建立 **118 项自动化测试**和 GitHub Actions CI；最近一次离线运行 **104 项通过、14 项真实 Provider gate 正常跳过、0 项失败**。
+- 完成 GLM-5.1、Kimi-K2.6、MiniMax-M2.5、DeepSeek-V4-Pro 的 **88-entry** Provider 黑盒矩阵；86 次有效运行中 65 次通过，任务级通过率 **0.7558**，并记录 Wilson 95% CI、无效运行、逐 case 脱敏结果和源阶段哈希。
 
-## 展示资产
-
-- [Benchmark 前后对比图](assets/benchmark-comparison.svg)
-- [Dashboard summary graphic](assets/dashboard-summary.svg)（不是产品截图）
-- [Scripted LangGraph integration suite](assets/scripted-langgraph-suite.svg)
-- [架构图](assets/architecture.svg)
-- 可浏览的静态 dashboard（确认按钮仅作界面演示）：[`runs/latest/dashboard.html`](../runs/latest/dashboard.html)、[`runs/autonomous/dashboard.html`](../runs/autonomous/dashboard.html)
-
-## 面试讲解重点
-
-**为什么不是只靠 system prompt？**
-模型可能被检索内容、工具结果或长上下文中的恶意文本诱导，prompt 约束不会天然阻止真实 API、文件或数据库副作用。AgentGuard 把控制点放在工具执行边界，基于真实参数和上下文做可审计决策。
-
-**为什么需要三层安全评测？**
-Labeled trace benchmark 回归策略判断；scripted LangGraph suite 回归 agent loop 与拦截反馈；LLM security suite 冻结攻击向量、通道、目标和模型预期行为，供真实 provider 重复运行。前两层证明实现正确，第三层才用于研究模型是否服从攻击以及网关是否在真实尝试上生效。
-
-**为什么分 gateway、policy engine、adapter？**
-Adapter 隔离框架差异，policy engine 聚合安全判断，gateway 管执行、脱敏、确认和审计。这个分层让新增 LangGraph、其他 agent framework 或新工具时，不需要重写核心策略。
-
-## 真实模型实验状态
-
-当前仓库支持 OpenAI-compatible provider 配置，并把付费测试拆成精确工具 E2E、4-task smoke 和 5-task frontier 三个 gate。2026-07-14 的 SiliconFlow GLM-5.1 单次运行中，E2E 与 smoke 通过，frontier 为 4/5：危险工具执行为 0，但模型在编码外发任务中直接输出了解码后的合成 canary，输出泄漏 gate 正确失败。最准确的表述是“构建真实 Agent 分层测试并发现工具执行安全与最终回答安全之间的边界”，不能写成“frontier 全部通过”或“消除了提示注入”。
-
-2026-07-12 的早期三任务 pilot 仍保留用于历史复现，其中两个攻击场景是 `not_attempted`，不能表述为网关拦截。两个快照都是 GLM-5.1、单次运行，尚不足以支持跨模型结论。
-
-补充真实模型结果时，使用 [新人上手指南的分层门控命令](quickstart.md#9-可选真实模型测试)，并从 `runs/manual/<experiment-id>/` 保存 manifest、metrics、脱敏 audit、失败案例和人工复核记录。
-
-只有在冻结任务和模型版本、运行重复试验并人工核验真实环境结果后，才建议在简历中写 provider-backed 模型的 attack success、utility、latency 或 cost 数字。单次 pilot 不足以支持泛化结论。
+> 结果边界：当前为研究原型；多模型实验每模型仅重复 2 次，任务级通过率同时包含安全与效用，不代表纯安全率、稳定模型排名或生产级防护能力。

@@ -7,6 +7,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 from ..detectors import PromptInjectionDetector, SensitiveDataDetector
+from ..provenance import DataProvenanceTracker
 from ..registry import ToolRegistry
 from ..schemas import (
     Decision,
@@ -44,9 +45,17 @@ class PolicyEngine:
         if unknown_checks:
             raise ValueError(f"Unknown policy checks: {sorted(unknown_checks)}")
 
-    def inspect(self, call: ToolCall, context: SecurityContext) -> GatewayDecision:
+    def inspect(
+        self,
+        call: ToolCall,
+        context: SecurityContext,
+        provenance: DataProvenanceTracker | None = None,
+    ) -> GatewayDecision:
         spec = self.registry.get(call.tool_name)
         if spec is None:
+            sanitized_params, _ = self.sensitive_detector.redact(call.params)
+            if provenance is not None:
+                sanitized_params, _ = provenance.redact(sanitized_params)
             return GatewayDecision(
                 decision=Decision.BLOCK,
                 risk_level=RiskLevel.HIGH,
@@ -59,7 +68,7 @@ class PolicyEngine:
                         call.tool_name,
                     )
                 ],
-                sanitized_params=call.params,
+                sanitized_params=dict(sanitized_params),
             )
 
         signals: list[RiskSignal] = []
@@ -73,18 +82,47 @@ class PolicyEngine:
             param_signals, sanitized_params = self._check_parameters(spec, call.params)
             signals.extend(param_signals)
         if "sensitive_data" not in self.disabled_checks:
-            signals.extend(self._check_sensitive_flow(spec, sanitized_params, call))
+            sensitive_flow_signals = self._check_sensitive_flow(
+                spec,
+                sanitized_params,
+                call,
+                provenance,
+            )
+            signals.extend(sensitive_flow_signals)
+            if spec.operation in {
+                OperationType.NETWORK,
+                OperationType.SEARCH,
+                OperationType.WRITE,
+            }:
+                detector_redacted, _ = self.sensitive_detector.redact(sanitized_params)
+                sanitized_params = dict(detector_redacted)
+            if provenance is not None and spec.operation in {
+                OperationType.NETWORK,
+                OperationType.SEARCH,
+                OperationType.WRITE,
+            }:
+                sanitized_params, _ = provenance.redact(sanitized_params)
         if "high_risk" not in self.disabled_checks:
             signals.extend(self._check_high_risk(spec))
 
         risk_level = _max_risk([spec.risk_level, *[signal.level for signal in signals]])
         decision, reason = self._decide(spec, context, signals, risk_level)
+        public_signals = [self._redact_signal_evidence(signal) for signal in signals]
         return GatewayDecision(
             decision=decision,
             risk_level=risk_level,
             reason=reason,
-            signals=signals,
+            signals=public_signals,
             sanitized_params=sanitized_params,
+        )
+
+    def _redact_signal_evidence(self, signal: RiskSignal) -> RiskSignal:
+        evidence, _ = self.sensitive_detector.redact(signal.evidence)
+        return RiskSignal(
+            signal.signal_type,
+            signal.level,
+            signal.message,
+            str(evidence),
         )
 
     def _check_permissions(self, spec: ToolSpec, context: SecurityContext) -> list[RiskSignal]:
@@ -111,16 +149,32 @@ class PolicyEngine:
         return signals
 
     def _check_prompt_injection(self, call: ToolCall, context: SecurityContext) -> list[RiskSignal]:
-        text = "\n".join(
+        call_text = "\n".join(
             part
             for part in [
-                call.source_content,
                 call.declared_purpose,
                 _safe_repr(call.params),
             ]
             if part
         )
-        signals = self.prompt_detector.detect(text)
+        signals = [
+            RiskSignal(
+                signal.signal_type,
+                signal.level,
+                f"Untrusted source: {signal.message}",
+                signal.evidence,
+            )
+            for signal in self.prompt_detector.detect(call.source_content)
+        ]
+        signals.extend(
+            RiskSignal(
+                signal.signal_type,
+                signal.level,
+                f"Tool call content: {signal.message}",
+                signal.evidence,
+            )
+            for signal in self.prompt_detector.detect(call_text)
+        )
         if signals and not context.trusted_input:
             return [
                 RiskSignal(signal.signal_type, max(signal.level, RiskLevel.HIGH), signal.message, signal.evidence)
@@ -296,7 +350,13 @@ class PolicyEngine:
                 )
         return signals
 
-    def _check_sensitive_flow(self, spec: ToolSpec, params: dict[str, Any], call: ToolCall) -> list[RiskSignal]:
+    def _check_sensitive_flow(
+        self,
+        spec: ToolSpec,
+        params: dict[str, Any],
+        call: ToolCall,
+        provenance: DataProvenanceTracker | None = None,
+    ) -> list[RiskSignal]:
         signals = self.sensitive_detector.signals(params)
         if signals and spec.operation in {OperationType.NETWORK, OperationType.SEARCH, OperationType.WRITE}:
             signals.append(
@@ -307,6 +367,21 @@ class PolicyEngine:
                     call.tool_name,
                 )
             )
+        if provenance is not None and spec.operation in {
+            OperationType.NETWORK,
+            OperationType.SEARCH,
+            OperationType.WRITE,
+        }:
+            matches = provenance.matches(params)
+            if matches:
+                signals.append(
+                    RiskSignal(
+                        RiskSignalType.SENSITIVE_DATA,
+                        RiskLevel.CRITICAL,
+                        f"Tracked data is being sent to {spec.operation.value} tool",
+                        ",".join(sorted({match.fingerprint[:12] for match in matches})),
+                    )
+                )
         return signals
 
     def _check_high_risk(self, spec: ToolSpec) -> list[RiskSignal]:
@@ -336,7 +411,13 @@ class PolicyEngine:
             return Decision.BLOCK, "Sensitive data flow was blocked"
         if any(signal.signal_type == RiskSignalType.PROMPT_INJECTION and signal.level >= RiskLevel.CRITICAL for signal in signals):
             return Decision.BLOCK, "Critical prompt injection was blocked"
-        if any(signal.signal_type == RiskSignalType.PROMPT_INJECTION and signal.level >= RiskLevel.HIGH for signal in signals):
+        high_prompt_signals = [
+            signal
+            for signal in signals
+            if signal.signal_type == RiskSignalType.PROMPT_INJECTION
+            and signal.level >= RiskLevel.HIGH
+        ]
+        if high_prompt_signals:
             if spec.operation in {
                 OperationType.DELETE,
                 OperationType.EXECUTE,
@@ -345,7 +426,15 @@ class PolicyEngine:
                 OperationType.SEARCH,
                 OperationType.ADMIN,
             }:
-                return Decision.BLOCK, "Prompt injection attempted to steer a risky tool"
+                current_call_is_clean_bounded_write = (
+                    spec.operation == OperationType.WRITE
+                    and all(
+                        signal.message.startswith("Untrusted source:")
+                        for signal in high_prompt_signals
+                    )
+                )
+                if not current_call_is_clean_bounded_write:
+                    return Decision.BLOCK, "Prompt injection attempted to steer a risky tool"
         if "high_risk" not in self.disabled_checks:
             if spec.requires_confirmation and not context.confirmed:
                 return Decision.REQUIRE_CONFIRMATION, "Human confirmation required for high-risk tool"

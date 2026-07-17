@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 from typing import Any
 
+from .approval import ApprovalError, ApprovalRequest, PersistentApprovalStore
 from .audit import AuditLogger
 from .defense import PolicyEngine
 from .detectors import PromptInjectionDetector, SensitiveDataDetector
+from .provenance import DataProvenanceTracker
 from .registry import ToolRegistry
 from .schemas import (
     Decision,
@@ -33,6 +36,7 @@ class SecurityGateway:
         prompt_detector: PromptInjectionDetector | None = None,
         sensitive_detector: SensitiveDataDetector | None = None,
         policy_engine: PolicyEngine | None = None,
+        approval_store: PersistentApprovalStore | None = None,
     ) -> None:
         self.registry = registry
         self.workspace_root = Path(workspace_root or Path.cwd()).resolve()
@@ -45,17 +49,24 @@ class SecurityGateway:
             sensitive_detector=sensitive_detector,
         )
         self.sensitive_detector = self.policy_engine.sensitive_detector
+        self.approval_store = approval_store
 
-    def inspect(self, call: ToolCall, context: SecurityContext) -> GatewayDecision:
-        return self.policy_engine.inspect(call, context)
+    def inspect(
+        self,
+        call: ToolCall,
+        context: SecurityContext,
+        provenance: DataProvenanceTracker | None = None,
+    ) -> GatewayDecision:
+        return self.policy_engine.inspect(call, context, provenance)
 
     def execute(
         self,
         call: ToolCall,
         context: SecurityContext,
         labels: dict[str, Any] | None = None,
+        provenance: DataProvenanceTracker | None = None,
     ) -> tuple[GatewayDecision, ToolResult | None]:
-        decision = self.inspect(call, context)
+        decision = self.inspect(call, context, provenance)
         result: ToolResult | None = None
         if decision.allowed_to_execute:
             executable_call = ToolCall(
@@ -96,7 +107,21 @@ class SecurityGateway:
                         sanitized_params=decision.sanitized_params,
                         redactions=counts,
                     )
-        self.audit_logger.record(context, call, decision, result, labels)
+            if provenance is not None:
+                provenance.observe(
+                    result.to_dict(),
+                    source=f"tool:{call.tool_name}:{call.step_id}",
+                )
+        audit_call = _provenance_safe_call(call, provenance)
+        audit_result = _provenance_safe_result(result, provenance)
+        audit_labels, _ = provenance.redact(labels or {}) if provenance else (labels, [])
+        self.audit_logger.record(
+            context,
+            audit_call,
+            decision,
+            audit_result,
+            dict(audit_labels or {}),
+        )
         return decision, result
 
     def resolve_confirmation(
@@ -105,20 +130,24 @@ class SecurityGateway:
         context: SecurityContext,
         approve: bool,
         labels: dict[str, Any] | None = None,
+        provenance: DataProvenanceTracker | None = None,
     ) -> tuple[GatewayDecision, ToolResult | None]:
         if type(approve) is not bool:
             raise TypeError("approve must be a boolean")
         labels = labels or {}
-        first_decision = self.inspect(call, context)
+        first_decision = self.inspect(call, context, provenance)
         if first_decision.decision != Decision.REQUIRE_CONFIRMATION:
-            return self.execute(call, context, labels)
+            return self.execute(call, context, labels, provenance)
 
         self.audit_logger.record(
             context,
-            call,
+            _provenance_safe_call(call, provenance),
             first_decision,
             None,
-            labels | {"confirmation_phase": "requested"},
+            _provenance_safe_labels(
+                labels | {"confirmation_phase": "requested"},
+                provenance,
+            ),
         )
         if not approve:
             denied = GatewayDecision(
@@ -130,15 +159,112 @@ class SecurityGateway:
             )
             self.audit_logger.record(
                 context,
-                call,
+                _provenance_safe_call(call, provenance),
                 denied,
                 None,
-                labels | {"confirmation_phase": "denied"},
+                _provenance_safe_labels(
+                    labels | {"confirmation_phase": "denied"},
+                    provenance,
+                ),
             )
             return denied, None
 
         confirmed_context = _with_confirmation(context)
-        return self.execute(call, confirmed_context, labels | {"confirmation_phase": "approved"})
+        return self.execute(
+            call,
+            confirmed_context,
+            labels | {"confirmation_phase": "approved"},
+            provenance,
+        )
+
+    def request_persisted_confirmation(
+        self,
+        call: ToolCall,
+        context: SecurityContext,
+        *,
+        ttl_seconds: int = 900,
+        labels: dict[str, Any] | None = None,
+        provenance: DataProvenanceTracker | None = None,
+    ) -> ApprovalRequest:
+        if self.approval_store is None:
+            raise ApprovalError("Persistent approval store is not configured")
+        decision = self.inspect(call, context, provenance)
+        if decision.decision != Decision.REQUIRE_CONFIRMATION:
+            raise ApprovalError("This call does not require persistent confirmation")
+        request = self.approval_store.create(
+            call,
+            context,
+            ttl_seconds=ttl_seconds,
+        )
+        self.audit_logger.record(
+            context,
+            _provenance_safe_call(call, provenance),
+            decision,
+            None,
+            _provenance_safe_labels(
+                (labels or {})
+                | {
+                    "confirmation_phase": "persisted_requested",
+                    "approval_request_fingerprint": request.request_fingerprint,
+                    "approval_expires_at": request.expires_at,
+                },
+                provenance,
+            ),
+        )
+        return request
+
+    def resolve_persisted_confirmation(
+        self,
+        approval_token: str,
+        call: ToolCall,
+        context: SecurityContext,
+        *,
+        approve: bool,
+        labels: dict[str, Any] | None = None,
+        provenance: DataProvenanceTracker | None = None,
+    ) -> tuple[GatewayDecision, ToolResult | None]:
+        if self.approval_store is None:
+            raise ApprovalError("Persistent approval store is not configured")
+        initial = self.inspect(call, context, provenance)
+        if initial.decision != Decision.REQUIRE_CONFIRMATION:
+            raise ApprovalError("This call does not require persistent confirmation")
+        approved = self.approval_store.decide(
+            approval_token,
+            call,
+            context,
+            approve=approve,
+        )
+        token_fingerprint = hashlib.sha256(
+            approval_token.encode("utf-8")
+        ).hexdigest()
+        safe_labels = (labels or {}) | {
+            "approval_request_fingerprint": token_fingerprint,
+        }
+        if not approved:
+            denied = GatewayDecision(
+                decision=Decision.BLOCK,
+                risk_level=initial.risk_level,
+                reason="Human rejected persistent confirmation",
+                signals=initial.signals,
+                sanitized_params=initial.sanitized_params,
+            )
+            self.audit_logger.record(
+                context,
+                _provenance_safe_call(call, provenance),
+                denied,
+                None,
+                _provenance_safe_labels(
+                    safe_labels | {"confirmation_phase": "persisted_denied"},
+                    provenance,
+                ),
+            )
+            return denied, None
+        return self.execute(
+            call,
+            _with_confirmation(context),
+            safe_labels | {"confirmation_phase": "persisted_consumed"},
+            provenance,
+        )
 
 
 def _with_confirmation(context: SecurityContext) -> SecurityContext:
@@ -150,6 +276,50 @@ def _with_confirmation(context: SecurityContext) -> SecurityContext:
         session_id=context.session_id,
         trusted_input=context.trusted_input,
     )
+
+
+def _provenance_safe_call(
+    call: ToolCall,
+    provenance: DataProvenanceTracker | None,
+) -> ToolCall:
+    if provenance is None:
+        return call
+    params, _ = provenance.redact(call.params)
+    source_content, _ = provenance.redact(call.source_content)
+    declared_purpose, _ = provenance.redact(call.declared_purpose)
+    return ToolCall(
+        tool_name=call.tool_name,
+        params=dict(params),
+        task_id=call.task_id,
+        step_id=call.step_id,
+        source_content=str(source_content),
+        declared_purpose=str(declared_purpose),
+    )
+
+
+def _provenance_safe_result(
+    result: ToolResult | None,
+    provenance: DataProvenanceTracker | None,
+) -> ToolResult | None:
+    if result is None or provenance is None:
+        return result
+    payload, _ = provenance.redact(result.to_dict())
+    return ToolResult(
+        ok=bool(payload["ok"]),
+        output=payload.get("output"),
+        error=payload.get("error"),
+        metadata=dict(payload.get("metadata") or {}),
+    )
+
+
+def _provenance_safe_labels(
+    labels: dict[str, Any],
+    provenance: DataProvenanceTracker | None,
+) -> dict[str, Any]:
+    if provenance is None:
+        return labels
+    redacted, _ = provenance.redact(labels)
+    return dict(redacted)
 
 
 def _bounded_tool_result(result: ToolResult) -> ToolResult:

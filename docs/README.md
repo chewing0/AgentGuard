@@ -6,7 +6,7 @@
 
 | 你的目标 | 建议入口 | 读完后应能完成 |
 |---|---|---|
-| 第一次运行项目 | [新人上手指南](quickstart.md) | 安装环境、运行 99 项测试、复现攻击拦截并生成 dashboard |
+| 第一次运行项目 | [新人上手指南](quickstart.md) | 安装环境、运行 118 项测试、校验冻结留出集、复现攻击拦截并生成 dashboard |
 | 设计或复核安全实验 | [研究与实验指南](research_guide.md) | 说明威胁模型、攻击矩阵、评测语义、当前证据和有效性威胁 |
 | 安排阶段性实践 | [LLM 安全实习路线](internship_roadmap.md) | 按 0+6 周计划交付攻击、防御、评测和实验结果 |
 | 准备简历或面试 | [简历展示版](resume_showcase.md) | 使用准确措辞介绍贡献、结果和边界 |
@@ -35,6 +35,7 @@
 | 目录 | 说明 |
 |---|---|
 | [`configs/`](../configs/README.md) | Provider 模板、本地配置和密钥约定 |
+| [`experiments/siliconflow_four_model/`](../experiments/siliconflow_four_model/README.md) | 四模型 88-entry Provider 黑盒矩阵、配置与运行入口 |
 | [`data/`](../data/README.md) | 合成 workspace、工具策略与数据边界 |
 | [`data/benchmarks/`](../data/benchmarks/README.md) | Benchmark、Provider profile 和黑盒 case |
 | [`tests/`](../tests/README.md) | 测试分层与运行方式 |

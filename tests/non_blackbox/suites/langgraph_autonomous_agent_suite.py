@@ -54,6 +54,69 @@ class LangGraphAutonomousAgentTests(unittest.TestCase):
         self.assertEqual(run.steps[-1].decision.decision, Decision.ALLOW)
         self.assertTrue((self.root / report_path).exists())
 
+        from typing import Any
+
+        from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
+        from langchain_core.messages import AIMessage, SystemMessage
+
+        class AnthropicMessageOrderModel(FakeMessagesListChatModel):
+            def bind_tools(
+                self,
+                tools: Any,
+                *,
+                tool_choice: str | None = None,
+                **kwargs: Any,
+            ) -> Any:
+                return self
+
+            def invoke(self, input: Any, config: Any = None, **kwargs: Any) -> Any:
+                if isinstance(input, list):
+                    system_positions = [
+                        index
+                        for index, message in enumerate(input)
+                        if isinstance(message, SystemMessage)
+                    ]
+                    if any(index != 0 for index in system_positions):
+                        raise ValueError("Anthropic system message must remain first")
+                return super().invoke(input, config=config, **kwargs)
+
+        anthropic_order_model = AnthropicMessageOrderModel(
+            responses=[
+                AIMessage(
+                    content="",
+                    tool_calls=[
+                        {
+                            "name": "agentguard__file__read",
+                            "args": {
+                                "path": "data/security_ops_workspace/public/security_operations_charter.md"
+                            },
+                            "id": "anthropic-order-read",
+                        }
+                    ],
+                ),
+                AIMessage(content="Public charter reviewed safely."),
+            ]
+        )
+        trusted_context = SecurityContext(
+            user_id="anthropic-order-test",
+            role="analyst",
+            scopes={"file:read"},
+            trusted_input=True,
+        )
+        anthropic_order_run = LangGraphAutonomousAgent(
+            self.gateway,
+            anthropic_order_model,
+            tool_names=["file.read"],
+            task_id="anthropic-order-test",
+        ).run("Read the public security operations charter.", context=trusted_context)
+
+        self.assertEqual(len(anthropic_order_run.steps), 1)
+        self.assertEqual(anthropic_order_run.steps[0].decision.decision, Decision.ALLOW)
+        self.assertEqual(
+            anthropic_order_run.metadata["final_message"],
+            "Public charter reviewed safely.",
+        )
+
     def test_attacked_autonomous_agent_blocks_poisoned_followup(self) -> None:
         report_path = "data/security_ops_workspace/reports/test_langgraph_autonomous_attack.md"
         model = build_scripted_security_ops_model(report_path=report_path, simulate_attack=True)
@@ -172,6 +235,41 @@ class LangGraphAutonomousAgentTests(unittest.TestCase):
         self.assertEqual(len(run.steps), 1)
         self.assertEqual(run.steps[0].call.source_content, task)
         self.assertEqual(run.steps[0].decision.decision, Decision.BLOCK)
+
+    def test_final_output_guard_blocks_secret_before_return(self) -> None:
+        from typing import Any
+
+        from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
+        from langchain_core.messages import AIMessage
+
+        class ToolCallingModel(FakeMessagesListChatModel):
+            def bind_tools(
+                self,
+                tools: Any,
+                *,
+                tool_choice: str | None = None,
+                **kwargs: Any,
+            ) -> Any:
+                return self
+
+        secret = "sk-agentguard-final-output-0123456789abcdef"
+        model = ToolCallingModel(
+            responses=[AIMessage(content=f"Recovered credential: {secret}")]
+        )
+        agent = LangGraphAutonomousAgent(
+            self.gateway,
+            model,
+            tool_names=[],
+            task_id="final-output-guard-test",
+            forbidden_output_patterns=[secret],
+        )
+
+        run = agent.run("Summarize the evidence.", context=self.context)
+
+        self.assertEqual(run.metadata["final_message"], "[REDACTED:forbidden_output]")
+        self.assertEqual(run.metadata["output_safety"]["decision"], "block")
+        self.assertTrue(run.metadata["output_safety"]["forbidden_matches"])
+        self.assertNotIn(secret, str(run.to_dict()))
 
 
 if __name__ == "__main__":

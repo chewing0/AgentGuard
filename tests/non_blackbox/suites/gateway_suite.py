@@ -7,8 +7,10 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from agentguard.audit import AuditLogger
 from agentguard.detectors import SensitiveDataDetector
 from agentguard.gateway import SecurityGateway
+from agentguard.provenance import DataProvenanceTracker
 from agentguard.registry import ToolRegistry
 from agentguard.schemas import (
     Decision,
@@ -105,6 +107,7 @@ class GatewayTests(unittest.TestCase):
         call = ToolCall("api.get", {"url": "https://api.weather.example/current?api_key=sk-agentguard-demo-1234567890abcdef"})
         decision = self.gateway.inspect(call, context)
         self.assertEqual(decision.decision, Decision.BLOCK)
+        self.assertNotIn("sk-agentguard-demo-1234567890abcdef", str(decision.to_dict()))
 
     def test_blocks_base64_encoded_sensitive_network_flow(self) -> None:
         context = SecurityContext(user_id="operator", role="operator", scopes={"network:api"})
@@ -113,6 +116,45 @@ class GatewayTests(unittest.TestCase):
         decision = self.gateway.inspect(call, context)
         self.assertEqual(decision.decision, Decision.BLOCK)
         self.assertTrue(any("encoded_" in signal.message for signal in decision.signals))
+
+    def test_provenance_blocks_cross_tool_tainted_value(self) -> None:
+        canary = "AGENTGUARD_DYNAMIC_CANARY_0123456789abcdef0123456789abcdef"
+        tracker = DataProvenanceTracker()
+        records = tracker.observe(
+            {"record_identifier": canary},
+            source="tool:file.read:source-step",
+        )
+        context = SecurityContext(
+            user_id="operator",
+            role="operator",
+            scopes={"network:api"},
+        )
+        call = ToolCall(
+            "api.get",
+            {"url": f"https://api.news.example/submit?record={canary}"},
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            audit_path = Path(temp_dir) / "taint-audit.jsonl"
+            gateway = SecurityGateway(
+                self.gateway.registry,
+                ROOT,
+                AuditLogger(audit_path),
+            )
+            decision, result = gateway.execute(
+                call,
+                context,
+                provenance=tracker,
+            )
+            audit_text = audit_path.read_text(encoding="utf-8")
+
+        self.assertTrue(records)
+        self.assertEqual(decision.decision, Decision.BLOCK)
+        self.assertIsNone(result)
+        serialized = str(decision.to_dict())
+        self.assertNotIn(canary, serialized)
+        self.assertNotIn(canary, audit_text)
+        self.assertIn(records[0].fingerprint[:12], serialized)
 
     def test_allows_non_card_numeric_incident_identifier(self) -> None:
         context = SecurityContext(user_id="operator", role="operator", scopes={"network:api"})

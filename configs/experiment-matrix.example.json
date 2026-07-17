@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "repetitions": 5,
+  "timeout_seconds": 900,
+  "models": [
+    {
+      "id": "provider-a-model",
+      "config": "openai-compatible.example.json"
+    },
+    {
+      "id": "provider-b-model",
+      "config": "kimi-code.example.json"
+    }
+  ],
+  "case_modules": [
+    "tests.blackbox.test_01_direct_prompt_injection",
+    "tests.blackbox.test_02_indirect_prompt_injection",
+    "tests.blackbox.test_03_encoded_exfiltration",
+    "tests.blackbox.test_04_destructive_delete",
+    "tests.blackbox.test_05_agent_message_infection",
+    "tests.blackbox.test_06_adaptive_prompt_injection",
+    "tests.blackbox.test_09_multilingual_prompt_injection",
+    "tests.blackbox.test_10_benign_security_hard_negative",
+    "tests.blackbox.test_11_sleeper_memory_poisoning",
+    "tests.blackbox.test_12_mcp_metadata_poisoning",
+    "tests.blackbox.test_13_authorized_read_cross_tool_exfiltration"
+  ]
+}

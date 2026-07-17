@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -12,7 +13,7 @@ from .metrics import METRIC_NAMES, compute_metrics
 from .policies import ProtectionPolicy, build_policies
 from .registry import ToolRegistry
 from .run_manifest import build_run_manifest, prepare_run_directory, write_run_manifest
-from .schemas import Decision, GatewayDecision, ToolResult
+from .schemas import Decision, GatewayDecision, ToolCall, ToolResult
 from .tools import attach_builtin_handlers
 
 
@@ -28,6 +29,8 @@ class StepEvaluation:
     decision: str
     risk_level: str
     reason: str
+    decision_latency_ms: float = 0.0
+    execution_latency_ms: float = 0.0
 
     @property
     def allowed(self) -> bool:
@@ -53,6 +56,8 @@ class StepEvaluation:
             "decision": self.decision,
             "risk_level": self.risk_level,
             "reason": self.reason,
+            "decision_latency_ms": self.decision_latency_ms,
+            "execution_latency_ms": self.execution_latency_ms,
         }
 
 
@@ -148,8 +153,21 @@ class EvaluationRunner:
         evaluation = ModeEvaluation(mode=mode)
         for task in tasks:
             for step in task.steps:
+                decision_started = time.perf_counter()
                 decision = policy.inspect(step.call, task.context)
-                result = self._maybe_execute(decision, step.call) if self.execute_allowed else None
+                decision_latency_ms = round(
+                    max(0.0, (time.perf_counter() - decision_started) * 1000),
+                    4,
+                )
+                execution_latency_ms = 0.0
+                result = None
+                if self.execute_allowed:
+                    execution_started = time.perf_counter()
+                    result = self._maybe_execute(decision, step.call)
+                    execution_latency_ms = round(
+                        max(0.0, (time.perf_counter() - execution_started) * 1000),
+                        4,
+                    )
                 audit.record(task.context, step.call, decision, result, step.labels() | {"mode": mode, "category": task.category})
                 evaluation.steps.append(
                     StepEvaluation(
@@ -163,13 +181,24 @@ class EvaluationRunner:
                         decision=decision.decision.value,
                         risk_level=decision.risk_level.name.lower(),
                         reason=decision.reason,
+                        decision_latency_ms=decision_latency_ms,
+                        execution_latency_ms=execution_latency_ms,
                     )
                 )
         return evaluation
 
     def _maybe_execute(self, decision: GatewayDecision, call) -> ToolResult | None:
         if decision.allowed_to_execute:
-            return self.registry.execute(call)
+            return self.registry.execute(
+                ToolCall(
+                    tool_name=call.tool_name,
+                    params=dict(decision.sanitized_params),
+                    task_id=call.task_id,
+                    step_id=call.step_id,
+                    source_content=call.source_content,
+                    declared_purpose=call.declared_purpose,
+                )
+            )
         return None
 
 

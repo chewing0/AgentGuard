@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "repetitions": 2,
+  "timeout_seconds": 900,
+  "models": [
+    {
+      "id": "siliconflow-glm-5.1",
+      "config": "siliconflow-glm-5.1.example.json"
+    },
+    {
+      "id": "siliconflow-kimi-k2.6",
+      "config": "siliconflow-kimi-k2.6.example.json"
+    },
+    {
+      "id": "siliconflow-minimax-m2.5",
+      "config": "siliconflow-minimax-m2.5.example.json"
+    },
+    {
+      "id": "siliconflow-deepseek-v4-pro",
+      "config": "siliconflow-deepseek-v4-pro.example.json"
+    }
+  ],
+  "case_modules": [
+    "tests.blackbox.test_01_direct_prompt_injection",
+    "tests.blackbox.test_02_indirect_prompt_injection",
+    "tests.blackbox.test_03_encoded_exfiltration",
+    "tests.blackbox.test_04_destructive_delete",
+    "tests.blackbox.test_05_agent_message_infection",
+    "tests.blackbox.test_06_adaptive_prompt_injection",
+    "tests.blackbox.test_09_multilingual_prompt_injection",
+    "tests.blackbox.test_10_benign_security_hard_negative",
+    "tests.blackbox.test_11_sleeper_memory_poisoning",
+    "tests.blackbox.test_12_mcp_metadata_poisoning",
+    "tests.blackbox.test_13_authorized_read_cross_tool_exfiltration"
+  ]
+}

@@ -19,6 +19,7 @@ from tests.real_model_support import (
     real_model_enabled,
     run_provider_call,
 )
+from agentguard.model_config import load_chat_model_from_config
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -539,7 +540,7 @@ def _next_adaptive_prompt(
         forbidden_patterns=forbidden_patterns,
         canary_value=canary_value,
     )
-    candidate = _mutate_prompt_via_openai(
+    candidate = _mutate_prompt_via_model(
         config_path=config_path,
         current_prompt=current_prompt,
         target_path=target_path,
@@ -578,7 +579,7 @@ def _sanitize_public_feedback(
     return sanitized[:1200]
 
 
-def _mutate_prompt_via_openai(
+def _mutate_prompt_via_model(
     *,
     config_path: Path,
     current_prompt: str,
@@ -586,29 +587,7 @@ def _mutate_prompt_via_openai(
     public_outcome: str,
     public_response: str,
 ) -> str:
-    try:
-        from openai import OpenAI
-    except ImportError as exc:  # pragma: no cover - protected by the real-model gate
-        raise RuntimeError("Adaptive black-box test requires the Python openai package") from exc
-
-    raw = json.loads(config_path.read_text(encoding="utf-8"))
-    if not isinstance(raw, dict) or str(raw.get("provider", "openai")).casefold() != "openai":
-        raise ValueError("Adaptive black-box optimizer requires an OpenAI-compatible config")
-    model = str(raw.get("model", "")).strip()
-    key_env = str(raw.get("api_key_env", "")).strip()
-    api_key = os.getenv(key_env, "")
-    if not model or not key_env or not api_key:
-        raise RuntimeError("Adaptive black-box optimizer model configuration is incomplete")
-    base_url = str(raw.get("base_url", "")).strip().rstrip("/") or None
-    if base_url == "https://api.siliconflow.cn":
-        base_url += "/v1"
-    timeout_seconds = min(max(float(raw.get("timeout_ms", 600_000)) / 1000.0, 1.0), 180.0)
-    client = OpenAI(
-        api_key=api_key,
-        base_url=base_url,
-        timeout=timeout_seconds,
-        max_retries=min(max(int(raw.get("max_retries", 1)), 0), 1),
-    )
+    model = load_chat_model_from_config(config_path)
     messages = [
         {
             "role": "system",
@@ -638,21 +617,28 @@ def _mutate_prompt_via_openai(
             ),
         },
     ]
-    response = run_provider_call(
-        lambda: client.chat.completions.create(
-            model=model,
-            messages=messages,
-            temperature=0,
-            max_tokens=300,
-        )
-    )
-    choices = getattr(response, "choices", None)
-    if not choices:
-        raise RuntimeError("Adaptive black-box optimizer returned no choices")
-    content = getattr(choices[0].message, "content", "")
-    if not isinstance(content, str) or not content.strip():
+    response = run_provider_call(lambda: model.invoke(messages, max_tokens=300))
+    content = _chat_response_text(response)
+    if not content:
         raise RuntimeError("Adaptive black-box optimizer returned an empty prompt")
-    return content.strip()
+    return content
+
+
+def _chat_response_text(response: Any) -> str:
+    text = getattr(response, "text", None)
+    if isinstance(text, str) and text.strip():
+        return text.strip()
+    content = getattr(response, "content", "")
+    if isinstance(content, str):
+        return content.strip()
+    if isinstance(content, list):
+        blocks = [
+            str(block.get("text", ""))
+            for block in content
+            if isinstance(block, dict) and block.get("type") == "text"
+        ]
+        return "\n".join(part for part in blocks if part).strip()
+    return ""
 
 
 def _extract_candidate_prompt(value: str) -> str:
